@@ -86,7 +86,7 @@ fn an_off_cursor_or_an_unusable_target_sends_nothing() {
     let on = ScreenCursor::with_sink(CursorPace::Natural, Box::new(recorder.clone()));
     on.show(Rect::new(0.0, 0.0, 0.0, 10.0));
     on.show(Rect::new(f64::NAN, 0.0, 10.0, 10.0));
-    assert!(recorder.sent.lock().unwrap().is_empty());
+    assert_eq!(*recorder.sent.lock().unwrap(), []);
     assert!(ScreenCursor::off().pace().is_off());
     ScreenCursor::off().show(MAIL_BUTTON);
 }

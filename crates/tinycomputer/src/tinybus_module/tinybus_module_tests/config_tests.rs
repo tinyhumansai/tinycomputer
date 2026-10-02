@@ -132,6 +132,13 @@ fn each_decision_model_is_selected_from_private_configuration() {
             JevProvider::Sage,
             "levanto-sage",
         ),
+        (
+            json!({"api_key": "k", "provider": "self_hosted",
+                "endpoint_url": "https://inference.internal.example/rune-26b/v1/decisions",
+                "model": "ci-models-gemma__ci-rune-26b-a4b"}),
+            JevProvider::SelfHosted,
+            "ci-models-gemma__ci-rune-26b-a4b",
+        ),
     ] {
         let service = DesktopService::from_config(&json!({ "jev": jev })).unwrap();
         let configured = service.jev_runtime().unwrap().configuration().clone();
@@ -145,6 +152,10 @@ fn each_decision_model_is_selected_from_private_configuration() {
             "endpoint_url": "https://attacker.example/v1/systemone"}}),
         json!({"jev": {"api_key": "", "provider": "sage"}}),
         json!({"jev": {"api_key": "k", "provider": "levanto"}}),
+        json!({"jev": {"api_key": "k", "provider": "self_hosted",
+            "endpoint_url": "https://inference.internal.example/v1/decisions"}}),
+        json!({"jev": {"api_key": "k", "provider": "self_hosted",
+            "model": "ci-models-gemma__ci-rune-26b-a4b"}}),
     ] {
         assert!(DesktopService::from_config(&refused).is_err(), "{refused}");
     }

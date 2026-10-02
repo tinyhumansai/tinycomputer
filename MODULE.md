@@ -42,9 +42,11 @@ is optional:
 - `jev`: the decision model and its API key, needed by the Jev-driven and
   task members. `provider` picks it: Jev through `type_safe` (the default),
   `open_router`, or `tiny_humans_open_router`; `open_jev` (OpenJEV's
-  Jev-compatible API, model `openjev`); or `sage` (Levanto Sage in place of
-  Jev, with an optional `fast`). `endpoint_url` may only repeat the
-  provider's own approved route;
+  Jev-compatible API, model `openjev`); `sage` (Levanto Sage in place of
+  Jev, with an optional `fast`); or `self_hosted` (an operator-declared
+  Jev-compatible decisions endpoint, where both `endpoint_url` and `model`
+  are required). `endpoint_url` may only repeat the
+  provider's own approved route, except for `self_hosted`, where it names it;
 - `cursor`: the agent's on-screen cursor, shared by the desktop and the
   browser — a pace (`off`, `brisk`, `natural` (the default), `calm`), or an
   object with an optional `pace` and an optional `overlay` path to the

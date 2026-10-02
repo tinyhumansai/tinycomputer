@@ -72,10 +72,17 @@ to it:
 | `tiny_humans_open_router` | Jev, Tiny Humans' authenticated OpenRouter proxy | `https://api.tinyhumans.ai/agent-integrations/openrouter/systemone` | `jev-latest` |
 | `open_jev` (alias `openjev`) | OpenJEV's Jev-compatible API | `https://api.openjev.sh/v1/systemone` | `openjev` |
 | `sage` | Levanto Sage, in place of Jev | `https://sage.levanto.ai/` | `levanto-sage` (fixed) |
+| `self_hosted` (alias `selfhosted`) | An operator-declared Jev-compatible decisions endpoint | any absolute HTTP(S) URL | none — `model` is required |
 
 `endpoint_url` overrides the provider's own route, but only to exactly that
 route; it is not a way to point a decision model at an arbitrary host.
-OpenJEV and Sage have no Tiny Humans proxy route, so a host that wants its
+`self_hosted` is the exception that proves the rule: it has no route of its
+own, so `endpoint_url` (and `model`) name the operator's own decision model
+— a self-hosted open model serving the decisions protocol — and the API key
+is sent only to that declared endpoint. Authentication belongs in `api_key`
+alone: keep tokens out of the URL's path or query, since `Describe` echoes
+the configured `endpoint_url` in its capabilities. OpenJEV and Sage have no Tiny Humans
+proxy route, so a host that wants its
 decisions to go through Tiny Humans uses `tiny_humans_open_router`.
 `sdk_name` is sent only to the Tiny Humans proxy.
 
@@ -92,6 +99,12 @@ every other provider ignores `fast`.
 
 ```json
 { "jev": { "api_key": "sage-...", "provider": "sage", "fast": true } }
+```
+
+```json
+{ "jev": { "api_key": "self-hosted-key", "provider": "self_hosted",
+    "endpoint_url": "https://inference.internal.example/rune-26b/v1/decisions",
+    "model": "ci-models-gemma__ci-rune-26b-a4b" } }
 ```
 
 `Describe` reports what was configured as `Capabilities.decision_model`:

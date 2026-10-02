@@ -50,7 +50,33 @@ impl JevRuntime {
     /// Returns a `JEV_INVALID_CONFIG` [`DesktopError`] when the provider,
     /// endpoint, or credentials in `request` cannot form a trusted client.
     pub fn configure(request: &JevConfig) -> Result<Self, Box<DesktopError>> {
-        if let Some(endpoint) = &request.endpoint_url
+        if request.provider == JevProvider::SelfHosted {
+            // A self-hosted model has no conventional route and no default
+            // model: the operator names both, and the key is sent only to
+            // the declared endpoint. `Client::new` below is the syntactic
+            // gate: an absolute HTTP(S) URL without embedded credentials,
+            // query, or fragment, plain HTTP only on a literal loopback.
+            if request
+                .endpoint_url
+                .as_deref()
+                .is_none_or(|endpoint| endpoint.trim().is_empty())
+            {
+                return Err(Box::new(DesktopError::new(
+                    "JEV_INVALID_CONFIG",
+                    "self_hosted decision model requires an endpoint_url",
+                )));
+            }
+            if request
+                .model
+                .as_deref()
+                .is_none_or(|model| model.trim().is_empty())
+            {
+                return Err(Box::new(DesktopError::new(
+                    "JEV_INVALID_CONFIG",
+                    "self_hosted decision model requires a model",
+                )));
+            }
+        } else if let Some(endpoint) = &request.endpoint_url
             && !trusted_endpoint(request.provider, endpoint)
         {
             return Err(Box::new(DesktopError::new(
@@ -66,7 +92,12 @@ impl JevRuntime {
             );
         }
         let mut config = match request.provider {
-            JevProvider::TypeSafe => ClientConfig::new(request.api_key()),
+            // A self-hosted model is configured exactly like first-party
+            // TypeSafe Jev, at the operator's declared endpoint: the client
+            // validates the URL and applies the first-party response check,
+            // which a self-hosted model satisfies by echoing the requested
+            // model id.
+            JevProvider::TypeSafe | JevProvider::SelfHosted => ClientConfig::new(request.api_key()),
             JevProvider::OpenRouter => ClientConfig::openrouter(request.api_key()),
             JevProvider::TinyHumansOpenRouter => {
                 ClientConfig::tinyhumans_openrouter(request.api_key())
@@ -251,24 +282,34 @@ impl Evaluator for Client {
     }
 }
 
-/// The one endpoint each decision provider may be configured at: its own
-/// published route. `OpenJEV` and Sage have no `TinyHumans` proxy route in
-/// `tinyinference-decisions`, so none is approved for them.
+/// The one endpoint each hosted decision provider may be configured at: its
+/// own published route. `OpenJEV` and Sage have no `TinyHumans` proxy route in
+/// `tinyinference-decisions`, so none is approved for them. A self-hosted
+/// model has no published route — the operator's declared endpoint is the
+/// route — so it yields `None` and [`trusted_endpoint`] treats a declared
+/// endpoint as trusted.
 #[must_use]
-pub(super) const fn approved_endpoint(provider: JevProvider) -> &'static str {
+pub(super) const fn approved_endpoint(provider: JevProvider) -> Option<&'static str> {
     match provider {
-        JevProvider::TypeSafe => "https://api.typesafe.ai/v1/systemone",
-        JevProvider::OpenRouter => "https://openrouter.ai/api/alpha/decisions",
+        JevProvider::TypeSafe => Some("https://api.typesafe.ai/v1/systemone"),
+        JevProvider::OpenRouter => Some("https://openrouter.ai/api/alpha/decisions"),
         JevProvider::TinyHumansOpenRouter => {
-            "https://api.tinyhumans.ai/agent-integrations/openrouter/systemone"
+            Some("https://api.tinyhumans.ai/agent-integrations/openrouter/systemone")
         }
-        JevProvider::OpenJev => "https://api.openjev.sh/v1/systemone",
-        JevProvider::Sage => "https://sage.levanto.ai/",
+        JevProvider::OpenJev => Some("https://api.openjev.sh/v1/systemone"),
+        JevProvider::Sage => Some("https://sage.levanto.ai/"),
+        JevProvider::SelfHosted => None,
     }
 }
 
 pub(super) fn trusted_endpoint(provider: JevProvider, endpoint: &str) -> bool {
-    let approved = approved_endpoint(provider);
+    let Some(approved) = approved_endpoint(provider) else {
+        // A self-hosted model is trusted at whatever non-empty endpoint the
+        // operator declared: there is no published route to compare against,
+        // and the API key travels only to that declared endpoint.
+        // `Client::new` remains the syntactic gate on the URL's shape.
+        return !endpoint.trim().is_empty();
+    };
     // Sage's endpoint is its API root, so its trailing slash is optional.
     if endpoint == approved
         || (provider == JevProvider::Sage && endpoint == approved.trim_end_matches('/'))

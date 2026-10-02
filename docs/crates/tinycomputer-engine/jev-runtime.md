@@ -61,10 +61,18 @@ Five providers are recognised, each with one approved endpoint that
 | **`TinyHumansOpenRouter`**, Tiny Humans' authenticated OpenRouter proxy, the only one that takes an `sdk_name` | `tiny_humans_open_router` | `https://api.tinyhumans.ai/agent-integrations/openrouter/systemone` |
 | **`OpenJev`**, OpenJEV's public System One API | `open_jev` (or `openjev`) | `https://api.openjev.sh/v1/systemone` |
 | **`Sage`**, Levanto Sage in place of Jev | `sage` | `https://sage.levanto.ai/` (trailing slash optional) |
+| **`SelfHosted`**, an operator-declared Jev-compatible decisions endpoint | `self_hosted` (or `selfhosted`) | any non-empty absolute HTTP(S) URL, required |
 
 Passing an `endpoint_url` that is not the provider's own approved route
 returns a `JEV_INVALID_CONFIG` error rather than silently sending credentials
-somewhere unexpected. `tinyinference-decisions` has no Tiny Humans proxy route
+somewhere unexpected. `SelfHosted` has no approved route to compare against:
+the operator's declared `endpoint_url` *is* the route, so a non-empty value is
+trusted, `Client::new` still enforces the URL's shape (absolute HTTP(S), no
+embedded credentials, no query or fragment, plain HTTP only on a literal
+loopback address), and both `endpoint_url` and `model` are required — there
+is no default model to fall back on. Authentication belongs in `api_key`,
+not the URL: keep tokens out of the path or query, since `Describe` echoes
+the configured `endpoint_url` in its capabilities. `tinyinference-decisions` has no Tiny Humans proxy route
 for OpenJEV or Sage, so none is approved. In tests, endpoints on
 `http://127.0.0.1:*` are also accepted, so a scripted Jev server can stand in
 for the real one.
