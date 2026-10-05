@@ -132,8 +132,8 @@ pub fn focused_text_context_verbose() -> AccessibilityResult<FocusedTextContext>
                         "[accessibility] osascript fallback failed ({fallback_err}); keeping helper context"
                     );
                     if let Some(helper_error) = ctx.raw_error.as_mut() {
-                        helper_error
-                            .push_str(&format!("; osascript fallback failed: {fallback_err}"));
+                        use std::fmt::Write as _;
+                        let _ = write!(helper_error, "; osascript fallback failed: {fallback_err}");
                     } else {
                         ctx.raw_error = Some(fallback_err);
                     }

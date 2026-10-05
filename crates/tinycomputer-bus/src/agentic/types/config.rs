@@ -6,9 +6,13 @@ use serde::{Deserialize, Serialize};
 ///
 /// The first three are routes to Jev itself; `open_jev` is `OpenJEV`'s public
 /// Jev-compatible API, answering as the `openjev` model; `sage` puts Levanto
-/// Sage behind the same loops in place of Jev. Each has exactly one approved
-/// endpoint, which [`JevConfig::endpoint_url`] may only repeat (contract 2.8
-/// added `open_jev` and `sage`).
+/// Sage behind the same loops in place of Jev. Each of those has exactly one
+/// approved endpoint, which [`JevConfig::endpoint_url`] may only repeat
+/// (contract 2.8 added `open_jev` and `sage`). `self_hosted` instead names an
+/// operator-declared Jev-compatible decisions endpoint: it has no approved
+/// route and no default model, so both [`JevConfig::endpoint_url`] and
+/// [`JevConfig::model`] are required, and the endpoint is trusted because the
+/// operator declared it (contract 2.9 added `self_hosted`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum JevProvider {
@@ -27,18 +31,27 @@ pub enum JevProvider {
     /// Levanto Sage (`https://sage.levanto.ai/`), answering the loops' Jev
     /// questions as its own calibrated decisions; see [`JevConfig::fast`].
     Sage,
+    /// An operator-declared Jev-compatible decisions endpoint, such as a
+    /// self-hosted open decision model. Requires [`JevConfig::endpoint_url`]
+    /// and [`JevConfig::model`]; the API key is sent only to that endpoint.
+    /// `selfhosted` is accepted as an alias on input.
+    #[serde(alias = "selfhosted")]
+    SelfHosted,
 }
 
 impl JevProvider {
     /// The model this provider answers as when [`JevConfig::model`] is
     /// absent: `jev-latest` for the Jev routes, `openjev` for `OpenJEV`, and
-    /// `levanto-sage` for Sage, which takes no model selection.
+    /// `levanto-sage` for Sage, which takes no model selection. A
+    /// self-hosted model has no default: the empty string, and a
+    /// configuration without an explicit model is rejected.
     #[must_use]
     pub const fn default_model(self) -> &'static str {
         match self {
             Self::TypeSafe | Self::OpenRouter | Self::TinyHumansOpenRouter => "jev-latest",
             Self::OpenJev => "openjev",
             Self::Sage => "levanto-sage",
+            Self::SelfHosted => "",
         }
     }
 }
@@ -54,7 +67,8 @@ pub struct JevConfig {
     /// Provider whose response contract should be validated.
     pub provider: JevProvider,
     /// Exact compatible endpoint, when the provider's conventional route is
-    /// not desired.
+    /// not desired — and always, for the `self_hosted` provider, whose
+    /// operator-declared endpoint is the only route.
     pub endpoint_url: Option<String>,
     /// Jev model or alias. Absent means the provider's
     /// [`JevProvider::default_model`]. Sage takes no model selection and

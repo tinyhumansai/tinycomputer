@@ -11,6 +11,7 @@ fn runtime_configuration_covers_all_providers_and_rejects_empty_keys() {
         JevProvider::TinyHumansOpenRouter,
         JevProvider::OpenJev,
         JevProvider::Sage,
+        JevProvider::SelfHosted,
     ] {
         let mut request = JevConfig::new("key");
         request.provider = provider;
@@ -84,23 +85,30 @@ fn only_each_providers_own_endpoint_is_approved() {
     for provider in providers {
         let mut request = JevConfig::new("key");
         request.provider = provider;
-        request.endpoint_url = Some(approved_endpoint(provider).to_owned());
+        request.endpoint_url = Some(
+            approved_endpoint(provider)
+                .expect("a hosted route")
+                .to_owned(),
+        );
         let runtime = JevRuntime::configure(&request).expect("the provider's own route");
         assert_eq!(
             runtime.configuration().endpoint_url.as_deref(),
-            Some(approved_endpoint(provider))
+            approved_endpoint(provider)
         );
         for other in providers.into_iter().filter(|other| *other != provider) {
-            assert!(
-                !trusted_endpoint(provider, approved_endpoint(other)),
-                "{provider:?} refuses {other:?}'s route"
-            );
+            if let Some(other_endpoint) = approved_endpoint(other) {
+                assert!(
+                    !trusted_endpoint(provider, other_endpoint),
+                    "{provider:?} refuses {other:?}'s route"
+                );
+            }
         }
     }
     assert_eq!(
         approved_endpoint(JevProvider::OpenJev),
-        "https://api.openjev.sh/v1/systemone"
+        Some("https://api.openjev.sh/v1/systemone")
     );
+    assert_eq!(approved_endpoint(JevProvider::SelfHosted), None);
     assert!(trusted_endpoint(
         JevProvider::Sage,
         "https://sage.levanto.ai"
@@ -117,6 +125,60 @@ fn only_each_providers_own_endpoint_is_approved() {
     untrusted.endpoint_url = Some("https://api.openjev.sh.evil.example/v1/systemone".to_owned());
     let error = JevRuntime::configure(&untrusted).unwrap_err();
     assert_eq!(error.code, "JEV_INVALID_CONFIG");
+}
+
+#[test]
+fn a_self_hosted_decision_model_serves_at_its_declared_endpoint() {
+    use crate::agentic::runtime::trusted_endpoint;
+
+    let endpoint = "https://inference.internal.example/rune-26b/v1/decisions";
+    let mut request = JevConfig::new("key");
+    request.provider = JevProvider::SelfHosted;
+    request.endpoint_url = Some(endpoint.to_owned());
+    request.model = Some("ci-models-gemma__ci-rune-26b-a4b".to_owned());
+    let runtime = JevRuntime::configure(&request).expect("the declared route");
+    let configured = runtime.configuration();
+    assert_eq!(configured.provider, JevProvider::SelfHosted);
+    assert_eq!(configured.model, "ci-models-gemma__ci-rune-26b-a4b");
+    assert_eq!(configured.endpoint_url.as_deref(), Some(endpoint));
+
+    // The declared endpoint is the route: any non-empty endpoint is
+    // trusted, hosted providers' fixed routes are not special, and the
+    // URL's shape is `Client::new`'s to enforce.
+    assert!(trusted_endpoint(
+        JevProvider::SelfHosted,
+        "https://any.example/api/alpha/decisions"
+    ));
+    assert!(trusted_endpoint(
+        JevProvider::SelfHosted,
+        "http://127.0.0.1:9999/v1/decisions"
+    ));
+    assert!(!trusted_endpoint(JevProvider::SelfHosted, ""));
+    assert!(!trusted_endpoint(JevProvider::SelfHosted, " \t "));
+
+    // Both the endpoint and the model are required: there is no default
+    // for either.
+    let mut endpointless = request.clone();
+    endpointless.endpoint_url = None;
+    assert_eq!(
+        JevRuntime::configure(&endpointless).unwrap_err().code,
+        "JEV_INVALID_CONFIG"
+    );
+    let mut modelless = request.clone();
+    modelless.model = None;
+    assert_eq!(
+        JevRuntime::configure(&modelless).unwrap_err().code,
+        "JEV_INVALID_CONFIG"
+    );
+
+    // `Client::new` rejects an endpoint that is not an absolute HTTP(S)
+    // URL — the syntactic gate a self-hosted declaration still passes.
+    let mut malformed = request.clone();
+    malformed.endpoint_url = Some("not a url".to_owned());
+    assert_eq!(
+        JevRuntime::configure(&malformed).unwrap_err().code,
+        "JEV_INVALID_CONFIG"
+    );
 }
 
 #[test]

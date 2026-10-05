@@ -147,24 +147,22 @@ pub fn detect_input_monitoring_permission() -> PermissionState {
     feature = "microphone-probe",
     any(target_os = "macos", target_os = "windows")
 ))]
+#[must_use]
 pub fn detect_microphone_permission() -> PermissionState {
     use cpal::traits::HostTrait;
     let host = cpal::default_host();
-    match host.default_input_device() {
-        Some(device) => {
-            let name = cpal::traits::DeviceTrait::description(&device)
-                .map_or_else(|_| "<unknown>".into(), |d| d.name().to_string());
-            log::debug!(
-                "[permissions] input device detected; capture authorization is unverified — device: {name}"
-            );
-            PermissionState::Unknown
-        }
-        None => {
-            log::debug!(
-                "[permissions] no default input device — possible permission denial or no mic connected"
-            );
-            PermissionState::Unknown
-        }
+    if let Some(device) = host.default_input_device() {
+        let name = cpal::traits::DeviceTrait::description(&device)
+            .map_or_else(|_| "<unknown>".into(), |d| d.name().to_string());
+        log::debug!(
+            "[permissions] input device detected; capture authorization is unverified — device: {name}"
+        );
+        PermissionState::Unknown
+    } else {
+        log::debug!(
+            "[permissions] no default input device — possible permission denial or no mic connected"
+        );
+        PermissionState::Unknown
     }
 }
 

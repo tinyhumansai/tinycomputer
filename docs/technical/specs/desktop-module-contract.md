@@ -41,7 +41,9 @@ engine's argument types, the permission preflight, and the bus surface.
   `open_jev` and `sage` decision providers, `JevConfig.fast`,
   `JevConfiguration.fast`, the planner's `LanguageModelProvider` routes, and
   `Capabilities.decision_model`, `planner_model`, `rescue_model`, and
-  `output_model`, all optional) return an
+  `output_model`, all optional; 2.9 added the `self_hosted` decision
+  provider, whose `JevConfig.endpoint_url` names the operator's own
+  Jev-compatible decisions endpoint and whose `model` is required) return an
   `AgentResponse` instead — see [`unified-agent.md`](unified-agent.md). They
   share this interface because a TinyBus module exports one interface.
 - The thirteen browser members (2.6) close the list, each prefixed `Browser`

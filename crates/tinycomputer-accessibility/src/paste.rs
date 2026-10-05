@@ -220,10 +220,7 @@ fn restore_focus_to_app(app_name: &str) -> Result<(), String> {
         } else {
             stderr
         };
-        return Err(format!(
-            "failed to restore focus to '{}': {}",
-            app_name, detail
-        ));
+        return Err(format!("failed to restore focus to '{app_name}': {detail}"));
     }
     std::thread::sleep(FOCUS_RESTORE_DELAY);
     Ok(())

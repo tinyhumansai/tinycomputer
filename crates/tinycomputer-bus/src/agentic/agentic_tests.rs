@@ -43,6 +43,27 @@ fn decision_model_selection_round_trips_and_stays_additive() {
     assert_eq!(alias.provider, JevProvider::OpenJev);
     assert!(serde_json::from_value::<JevConfig>(json!({"provider": "levanto"})).is_err());
 
+    // Contract 2.9: a self-hosted decision model decodes under both
+    // spellings and round-trips with its declared endpoint and model.
+    let self_hosted: JevConfig = serde_json::from_value(json!({
+        "api_key": "k",
+        "provider": "self_hosted",
+        "endpoint_url": "https://inference.internal.example/rune-26b/v1/decisions",
+        "model": "ci-models-gemma__ci-rune-26b-a4b"
+    }))
+    .unwrap();
+    assert_eq!(self_hosted.provider, JevProvider::SelfHosted);
+    assert_eq!(
+        self_hosted.endpoint_url.as_deref(),
+        Some("https://inference.internal.example/rune-26b/v1/decisions")
+    );
+    let again: JevConfig =
+        serde_json::from_value(serde_json::to_value(&self_hosted).unwrap()).unwrap();
+    assert_eq!(again, self_hosted);
+    let alias: JevConfig =
+        serde_json::from_value(json!({"api_key": "k", "provider": "selfhosted"})).unwrap();
+    assert_eq!(alias.provider, JevProvider::SelfHosted);
+
     assert_eq!(JevProvider::TypeSafe.default_model(), "jev-latest");
     assert_eq!(JevProvider::OpenRouter.default_model(), "jev-latest");
     assert_eq!(
@@ -51,6 +72,7 @@ fn decision_model_selection_round_trips_and_stays_additive() {
     );
     assert_eq!(JevProvider::OpenJev.default_model(), "openjev");
     assert_eq!(JevProvider::Sage.default_model(), "levanto-sage");
+    assert_eq!(JevProvider::SelfHosted.default_model(), "");
 
     // The summary leaves `fast` out when false, so a 2.7 reader sees the
     // same object it always did.

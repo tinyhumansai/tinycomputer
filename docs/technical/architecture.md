@@ -220,7 +220,7 @@ configuration validates.
 | `trace_path` | string | where agent-desktop writes its trace |
 | `trace_strict` | bool | fail a call when its trace cannot be written |
 | `headed` | bool | use real input instead of accessibility actions |
-| `jev` | object | decision provider (`type_safe`, `open_router`, `tiny_humans_open_router`, `open_jev`, `sage`), API key, optional model, approved endpoint, timeout, retries, `sdk_name` for the TinyHumans proxy, and `fast` for Sage |
+| `jev` | object | decision provider (`type_safe`, `open_router`, `tiny_humans_open_router`, `open_jev`, `sage`, `self_hosted`), API key, optional model, approved endpoint (for `self_hosted`: the required operator-declared endpoint and model), timeout, retries, `sdk_name` for the TinyHumans proxy, and `fast` for Sage |
 | `planner` | object | `api_key`, `provider` (`open_router` or `tiny_humans`), approved `endpoint_url`, `sdk_name`, and optional `model` for the planner, optional `rescue_route` giving the rescuer its own route and key, optional `rescue_model` for rescuing failed steps (`docs/technical/specs/task-rescue.md`), and optional `output_model` for shaping a finished task's answer (`docs/technical/specs/task-output.md`); absent means no planner, no rescues, and no output shapes |
 | `browser.executable` | string | the Chrome or Chromium binary to launch, when discovery would not find one |
 | `cursor` | string or object | the agent's on-screen cursor for desktop and browser: a pace (`off`, `brisk`, `natural` (default), `calm`) or `{pace, overlay}` with the overlay helper's path ([spec](specs/virtual-cursor.md)) |
