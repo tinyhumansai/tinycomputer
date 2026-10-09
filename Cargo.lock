@@ -2729,12 +2729,12 @@ name = "tinyinference-llm"
 version = "0.3.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "bytes",
  "futures",
  "reqwest",
  "serde",
  "serde_json",
- "sha2 0.11.0",
  "thiserror 2.0.20",
  "tinyinference-core",
  "tinytools-agent",
@@ -2755,7 +2755,7 @@ dependencies = [
 [[package]]
 name = "tinytools"
 version = "0.5.0"
-source = "git+https://github.com/tinyhumansai/tinytools?rev=8feb5571e52baa145b5c7c473b16cd59de2b103a#8feb5571e52baa145b5c7c473b16cd59de2b103a"
+source = "git+https://github.com/tinyhumansai/tinytools?rev=bd60b9b52f1998b4483b9cf107a72d3338e672f8#bd60b9b52f1998b4483b9cf107a72d3338e672f8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2766,7 +2766,7 @@ dependencies = [
 [[package]]
 name = "tinytools-agent"
 version = "0.5.0"
-source = "git+https://github.com/tinyhumansai/tinytools?rev=8feb5571e52baa145b5c7c473b16cd59de2b103a#8feb5571e52baa145b5c7c473b16cd59de2b103a"
+source = "git+https://github.com/tinyhumansai/tinytools?rev=bd60b9b52f1998b4483b9cf107a72d3338e672f8#bd60b9b52f1998b4483b9cf107a72d3338e672f8"
 dependencies = [
  "regex",
  "serde",
