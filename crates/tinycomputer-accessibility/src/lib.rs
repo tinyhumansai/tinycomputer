@@ -33,7 +33,8 @@ pub use automation_state::{
 pub use error::{Error, Result};
 pub use focus::{focused_text_context, focused_text_context_verbose, validate_focused_target};
 pub use globe::{
-    GlobeHotkeyPollResult, GlobeHotkeyStatus, globe_listener_poll, globe_listener_start,
+    GlobeHotkeyPollResult, GlobeHotkeyStatus, globe_listener_poll, globe_listener_read,
+    globe_listener_read_with_cancel, globe_listener_start, globe_listener_start_with_cancel,
     globe_listener_stop,
 };
 pub use helper::precompile_helper_background;
