@@ -44,3 +44,7 @@ The workspace forbids `unsafe`; this crate lowers it to `deny` and only
 The macOS paths (FFI, helper process) cannot run in Linux CI: tests cover the
 pure logic and the non-macOS fallbacks, and macOS code is checked with
 `cargo check --target aarch64-apple-darwin`.
+
+Shared permission, focus, Globe and error types are re-exported from
+`tinycomputer-bus::accessibility`. Hosts using the compiled module take the
+pure bus crate; native operations remain in this implementation.

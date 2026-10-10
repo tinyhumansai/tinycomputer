@@ -2572,10 +2572,12 @@ dependencies = [
 name = "tinycomputer"
 version = "0.10.1"
 dependencies = [
+ "getrandom 0.4.3",
  "serde",
  "serde_json",
  "tinybus",
  "tinybus-module",
+ "tinycomputer-accessibility",
  "tinycomputer-browser",
  "tinycomputer-bus",
  "tinycomputer-desktop",
@@ -2594,6 +2596,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.20",
+ "tinycomputer-bus",
 ]
 
 [[package]]
@@ -2619,6 +2622,7 @@ version = "0.10.1"
 dependencies = [
  "serde",
  "serde_json",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

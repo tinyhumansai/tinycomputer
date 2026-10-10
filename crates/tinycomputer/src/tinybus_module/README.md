@@ -80,3 +80,9 @@ of this module's own source, because reading them back out of the exported
 Integration tests use TinyBus's in-memory transport, and
 `crates/tinycomputer-examples/src/bin/verify_module.rs` loads a compiled `cdylib` through
 the real dynamic loader before a release archive is accepted.
+
+## Native accessibility lifecycle
+
+Eight native members delegate to the accessibility implementation on blocking
+threads, with module-owned listener leases. No device or helper behavior runs
+in the host. See the [contract](../../../tinycomputer-bus/src/accessibility/README.md).

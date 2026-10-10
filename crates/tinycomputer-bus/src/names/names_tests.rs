@@ -25,7 +25,7 @@ fn every_member_name_is_listed_exactly_once() {
 
 #[test]
 fn the_member_list_has_the_eighty_members_the_contract_documents() {
-    assert_eq!(METHODS.len(), 80);
+    assert_eq!(METHODS.len(), 88);
 }
 
 #[test]

@@ -199,9 +199,14 @@ fn sweep() -> Vec<tinycomputer_bus::DesktopResponse> {
 fn the_sweep_covers_every_member_the_contract_names() {
     // The five agentic members compose the others, the eight task members
     // run on the engine, and the browser members on the browser adapter;
-    // none has a desktop command to sweep.
+    // native accessibility members run on their own bridge; none has a
+    // desktop command to sweep.
     assert_eq!(
-        sweep().len() + 5 + 8 + bus::browser::names::METHODS.len(),
+        sweep().len()
+            + 5
+            + 8
+            + bus::browser::names::METHODS.len()
+            + bus::names::accessibility::METHODS.len(),
         bus::METHODS.len()
     );
 }

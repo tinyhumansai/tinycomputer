@@ -11,7 +11,7 @@
 //! # What is here
 //!
 //! - [`names`] — the interface name, the object path, and one constant per
-//!   member, plus [`names::METHODS`] listing all eighty in dispatch order.
+//!   member, plus [`names::METHODS`] listing all eighty-eight in dispatch order.
 //! - [`catalogue`] — every member with its family (task, flow, desktop,
 //!   browser), a one-line summary, and whether it is confidential; `Describe`
 //!   serves it so a caller can find the right member without this source.
@@ -166,3 +166,6 @@ pub use vocabulary::{
     StatePredicate, Surface,
 };
 pub use waiting::WaitRequest;
+
+/// Native accessibility DTOs shared with the compiled module and compatibility library.
+pub mod accessibility;

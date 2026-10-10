@@ -86,6 +86,7 @@ impl DesktopService {
             tasks,
             browser,
             browser_defaults,
+            accessibility: Arc::new(super::accessibility::Access::default()),
         })
     }
 
@@ -188,5 +189,14 @@ pub(in crate::tinybus_module) fn desktop_availability(
         kind: SurfaceKind::Desktop,
         available: reason.is_none(),
         reason,
+    }
+}
+
+#[cfg(test)]
+impl DesktopService {
+    /// Inject platform fixtures for unit tests, keeping real devices untouched.
+    pub(crate) fn with_native_fixture(mut self) -> Self {
+        self.accessibility = super::accessibility::fixture();
+        self
     }
 }

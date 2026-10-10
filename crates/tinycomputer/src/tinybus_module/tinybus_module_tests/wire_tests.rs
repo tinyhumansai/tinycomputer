@@ -110,7 +110,7 @@ fn wire_sweep() -> Vec<(&'static str, serde_json::Value)> {
     let no_session = json!([{ "session": "s-0" }]);
     let no_output = json!([{ "output": "o-0" }]);
 
-    vec![
+    with_native_cases(vec![
         (
             names::methods::VALIDATE_FLOW,
             json!([{ "flow": { "app": "Mail", "steps": ["start a new note"] } }]),
@@ -202,6 +202,34 @@ fn wire_sweep() -> Vec<(&'static str, serde_json::Value)> {
         (browser_methods::RELEASE_OUTPUT, no_output),
         (browser_methods::LIST_DOWNLOADS, no_session.clone()),
         (browser_methods::WAIT_DOWNLOAD, no_session),
+    ])
+}
+
+fn with_native_cases(
+    mut cases: Vec<(&'static str, serde_json::Value)>,
+) -> Vec<(&'static str, serde_json::Value)> {
+    let at = cases
+        .iter()
+        .position(|(member, _)| *member == browser_methods::CLOSE_SESSION)
+        .expect("browser cases");
+    cases.splice(at..at, native_wire_sweep());
+    cases
+}
+
+fn native_wire_sweep() -> Vec<(&'static str, serde_json::Value)> {
+    let nothing = json!([]);
+    vec![
+        (
+            names::accessibility::ACCESSIBILITY_PERMISSIONS,
+            nothing.clone(),
+        ),
+        (
+            names::accessibility::ACCESSIBILITY_REQUEST_PERMISSION,
+            json!(["microphone"]),
+        ),
+        (names::accessibility::GLOBE_START, nothing.clone()),
+        (names::accessibility::GLOBE_POLL, json!(["unknown-lease"])),
+        (names::accessibility::GLOBE_STOP, json!(["unknown-lease"])),
     ]
 }
 
@@ -231,6 +259,9 @@ fn the_wire_sweep_covers_every_member_except_the_one_with_no_safe_input() {
             &names::methods::TASK_REPORT,
             &names::methods::LIST_TASKS,
             &names::methods::CLIPBOARD_CLEAR,
+            &names::accessibility::ACCESSIBILITY_FOCUS,
+            &names::accessibility::ACCESSIBILITY_VALIDATE_TARGET,
+            &names::accessibility::ACCESSIBILITY_PASTE,
             &browser_methods::OPEN_SESSION,
         ],
         "the task members answer in their own reply shape; see the agent tests below"
@@ -345,6 +376,33 @@ async fn every_member_decodes_its_payload_and_answers_in_the_envelope() -> tinyb
         assert!(!reply.command.is_empty(), "{member} named nothing");
         assert_eq!(reply.ok, reply.data.is_some(), "{member}");
         assert_eq!(!reply.ok, reply.error.is_some(), "{member}");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn confidential_native_payloads_decode_and_execute_on_the_injected_platform()
+-> tinybus::Result<()> {
+    let service = service();
+    for (member, body) in [
+        (
+            names::accessibility::ACCESSIBILITY_FOCUS,
+            json!([{"verbose":true}]),
+        ),
+        (
+            names::accessibility::ACCESSIBILITY_VALIDATE_TARGET,
+            json!([{}]),
+        ),
+        (
+            names::accessibility::ACCESSIBILITY_PASTE,
+            json!([{"text":"fixture", "target":{}}]),
+        ),
+    ] {
+        assert!(service.requires_confidential(&member.try_into()?));
+        let response: DesktopResponse =
+            serde_json::from_value(service.call(&member.try_into()?, body).await?)
+                .expect("native envelope");
+        assert!(response.ok, "{member}: {:?}", response.error);
     }
     Ok(())
 }

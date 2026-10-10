@@ -40,29 +40,7 @@ const LOG_PREFIX: &str = "[globe_hotkey]";
 #[cfg(any(target_os = "macos", test))]
 const MAX_PENDING_EVENTS: usize = 64;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-/// State of the Globe/Fn key listener.
-pub struct GlobeHotkeyStatus {
-    /// Whether this platform supports the listener.
-    pub supported: bool,
-    /// Whether the listener process is alive.
-    pub running: bool,
-    /// Input Monitoring state the listener needs.
-    pub input_monitoring_permission: PermissionState,
-    /// Most recent listener error, if any.
-    pub last_error: Option<String>,
-    /// Events queued and not yet polled.
-    pub events_pending: usize,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-/// Listener status plus the key events drained by one poll.
-pub struct GlobeHotkeyPollResult {
-    /// Listener status at poll time.
-    pub status: GlobeHotkeyStatus,
-    /// Drained events, oldest first (`FN_DOWN` / `FN_UP`).
-    pub events: Vec<String>,
-}
+pub use tinycomputer_bus::accessibility::{GlobeHotkeyPollResult, GlobeHotkeyStatus};
 
 #[cfg(target_os = "macos")]
 struct GlobeListenerProcess {

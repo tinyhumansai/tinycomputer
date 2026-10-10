@@ -14,7 +14,7 @@ payload vocabulary has to be published as an ordinary library. This is it.
 
 | module          | what it holds                                                      |
 | --------------- | ------------------------------------------------------------------ |
-| `names`         | interface name, object path, one constant per member — 80 of them   |
+| `names`         | interface name, object path, one constant per member — 88 of them   |
 | `catalogue`     | every member's family, one-line summary, and confidentiality        |
 | `envelope`      | `DesktopResponse` and the structured `DesktopError` it carries      |
 | `vocabulary`    | surfaces, modifiers, buttons, element properties                    |
@@ -151,3 +151,9 @@ which tracks the shipped artifact.
 The payload tests pin the serde representation, because that representation is
 the wire form: a host and a module that disagree about a field name fail at
 runtime with a decode error, so the shape is asserted rather than assumed.
+
+Contract 2.11 adds the eight native accessibility members. Their serialized
+vocabulary and opaque Globe listener handles live in `accessibility`; native
+execution remains inside the compiled module. Focus, target validation and paste
+require confidential calls. Hosts must pin a released 2.11-compatible artifact
+and verify its digest before adopting this surface.

@@ -24,6 +24,8 @@ microphone-probe = ["dep:cpal"]
 paste = ["dep:arboard", "dep:enigo"]
 
 [dependencies]
+# Pure vocabulary shared with consumers of the compiled computer module.
+tinycomputer-bus = { workspace = true }
 # Permission state and focus context cross into hosts as JSON.
 serde = { workspace = true }
 # The Swift helper speaks one JSON object per line over stdin/stdout.
