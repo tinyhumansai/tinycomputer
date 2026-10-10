@@ -8,10 +8,12 @@ use super::*;
 #[test]
 fn physical_lines_are_bounded_and_truncated_payloads_are_not_published() {
     let mut seen = Vec::new();
-    events(b"FN_DOWN\n\nFN_UP\n".as_slice(), |event| {
-        seen.push(event.to_owned());
-    })
-    .expect("facts");
+    assert_eq!(
+        events(b"FN_DOWN\n\nFN_UP\n".as_slice(), |event| {
+            seen.push(event.to_owned());
+        }),
+        Err("native_stream_ended")
+    );
     assert_eq!(seen, ["FN_DOWN", "FN_UP"]);
     assert_eq!(
         events(vec![b'x'; MAX_LINE + 1].as_slice(), |_| panic!(
@@ -57,4 +59,35 @@ fn native_pipe_read_failures_are_fixed_errors_without_payload_publication() {
         errors(Unreadable, || panic!("failed stream reported content")),
         Err("native_read_failed")
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn helper_stdout_eof_after_down_is_a_continuity_break_while_process_lives() {
+    use super::super::owned::Owned;
+    use super::super::queue::Queue;
+    use command_group::CommandGroup;
+    use std::io::BufReader;
+    use std::process::{Command, Stdio};
+
+    let mut command = Command::new("/bin/sh");
+    command
+        .args(["-c", "printf 'FN_DOWN\\n'; exec 1>&-; exec sleep 600"])
+        .stdout(Stdio::piped());
+    let child = command.group_spawn().expect("local helper fixture");
+    let mut owned = Owned::new(child);
+    let stdout = owned.child.inner().stdout.take().expect("helper stdout");
+    let queue = std::sync::Mutex::new(Queue::default());
+    let outcome = events_into_queue(BufReader::new(stdout), &queue);
+    let helper_still_running = owned.try_wait().expect("helper status").is_none();
+    let (seen, overflow) = queue.lock().expect("event queue").drain();
+    owned.cleanup().expect("stop local helper");
+
+    assert!(
+        helper_still_running,
+        "stdout ended before the helper exited"
+    );
+    assert_eq!(seen, ["FN_DOWN"]);
+    assert!(overflow, "unexpected EOF must invalidate event continuity");
+    assert_eq!(outcome, Err("native_stream_ended"));
 }

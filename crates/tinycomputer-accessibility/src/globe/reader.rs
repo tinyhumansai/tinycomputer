@@ -11,7 +11,7 @@ pub(super) fn events<R: BufRead>(
         let bytes = reader.fill_buf().map_err(|_| "native_read_failed")?;
         if bytes.is_empty() {
             return if line.is_empty() {
-                Ok(())
+                Err("native_stream_ended")
             } else {
                 Err("native_truncated_event")
             };
@@ -34,6 +34,26 @@ pub(super) fn events<R: BufRead>(
             }
             line.clear();
         }
+    }
+}
+
+pub(super) fn events_into_queue<R: BufRead>(
+    reader: R,
+    queue: &std::sync::Mutex<super::queue::Queue>,
+) -> Result<(), &'static str> {
+    let mut queue_failed = false;
+    let result = events(reader, |event| match queue.lock() {
+        Ok(mut guard) => guard.push(event.to_owned()),
+        Err(_) => queue_failed = true,
+    });
+    let mut guard = queue.lock().map_err(|_| "native_queue_failed")?;
+    if result.is_err() || queue_failed {
+        guard.discontinuity();
+    }
+    if queue_failed {
+        Err("native_queue_failed")
+    } else {
+        result
     }
 }
 

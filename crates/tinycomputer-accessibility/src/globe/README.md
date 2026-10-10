@@ -10,6 +10,8 @@ and a 30-second bound. `helper.rs` preserves private cache layout and Swift sour
 `queue.rs` retains at most 64 physical FN_DOWN/FN_UP facts in order and reports
 loss. `reader.rs` bounds each stdout frame to 128 bytes, discards stderr in 8 KiB
 chunks and never logs native payloads. Native restart marks a continuity gap.
+Any unexpected stdout reader termination also marks a gap, including clean EOF
+while the helper process remains alive; explicit Stop discards its queue.
 The bus module retains one acknowledged snapshot above this queue and exposes
 explicit reset semantics; legacy Poll keeps its old destructive wire.
 

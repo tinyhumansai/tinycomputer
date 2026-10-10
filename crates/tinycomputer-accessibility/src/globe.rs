@@ -71,15 +71,6 @@ static GLOBE_LISTENER: LazyLock<StdMutex<Option<GlobeListenerProcess>>> =
     LazyLock::new(|| StdMutex::new(None));
 
 #[cfg(target_os = "macos")]
-fn push_event(queue: &Arc<StdMutex<queue::Queue>>, event: String) {
-    let Ok(mut guard) = queue.lock() else {
-        log::warn!("{LOG_PREFIX} failed to lock queue for event");
-        return;
-    };
-    guard.push(event);
-}
-
-#[cfg(target_os = "macos")]
 fn set_last_error(error_store: &Arc<StdMutex<Option<String>>>, message: Option<String>) {
     let Ok(mut guard) = error_store.lock() else {
         log::warn!("{LOG_PREFIX} failed to lock last_error store");
@@ -220,13 +211,10 @@ fn ensure_running_locked(
         let error_store = process.last_error.clone();
         let reader = std::thread::Builder::new()
             .spawn(move || {
-                if let Err(reason) = reader::events(BufReader::new(stdout), |event| {
-                    push_event(&queue, event.to_owned());
-                }) {
+                if let Err(reason) =
+                    reader::events_into_queue(BufReader::new(stdout), queue.as_ref())
+                {
                     set_last_error(&error_store, Some(reason.into()));
-                    if let Ok(mut queue) = queue.lock() {
-                        queue.push("invalid".into());
-                    }
                 }
                 log::debug!("{LOG_PREFIX} stdout reader exited");
             })
