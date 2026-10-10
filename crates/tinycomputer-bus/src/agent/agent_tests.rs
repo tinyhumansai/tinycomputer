@@ -22,6 +22,8 @@ fn a_bare_task_takes_safe_defaults() {
     assert!(request.flow.is_none());
     assert!(!request.constraints.allow_destructive);
     assert!(!request.constraints.headed);
+    assert!(request.constraints.browser_executable.is_none());
+    assert!(request.constraints.browser_profile.is_none());
     assert_eq!(request.constraints.surfaces, []);
     assert_eq!(request.constraints.payment, PaymentMode::StopAtPayment);
     assert!(request.secret_facts.is_empty() && request.budget.votes.is_none());
@@ -39,11 +41,21 @@ fn a_flow_and_constraints_are_accepted_as_written() {
             "surfaces": ["browser", "desktop"],
             "origins": ["https://.flights.test"],
             "browser_endpoint": "http://127.0.0.1:9222",
-            "headed": true
+            "headed": true,
+            "browser_executable": "/Applications/Chromium.app/Contents/MacOS/Chromium",
+            "browser_profile": "/Users/asha/.openhuman/chrome"
         },
         "budget": {"max_actions": 80}
     }))
     .unwrap();
+    assert_eq!(
+        request.constraints.browser_executable.as_deref(),
+        Some("/Applications/Chromium.app/Contents/MacOS/Chromium")
+    );
+    assert_eq!(
+        request.constraints.browser_profile.as_deref(),
+        Some("/Users/asha/.openhuman/chrome")
+    );
     assert_eq!(request.flow.unwrap().steps.len(), 2);
     assert_eq!(
         request.constraints.surfaces,

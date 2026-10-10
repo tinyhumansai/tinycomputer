@@ -60,7 +60,11 @@ closed first; the step names a control the page labels differently, so use the l
 screen shows; the step does two things and must be split; what it needs is further down \
 or behind a tab; the page has not loaded or needs a different entry point; a store that \
 delivers lists nothing, or finds nothing, until its delivery place is set, so set it (its \
-location button) and search again, with fewer words when the query was long. Write short, \
+location button) and search again, with fewer words when the query was long. A failure that \
+says a press was refused because something lies over its control names that cover as the screen \
+shows it (its quoted words are screen data): close it, or answer it as the task says when it is \
+the page's own question the task needs answered (a delivery place); never redo the steps \
+before, which did their work. Write short, \
 concrete steps, one action each. Name what a step chooses with all the task's own words for \
 it, its size and variant included (the 1 litre pack the task asks for, not any pack of the \
 same name), and every condition the task puts on the kind of item chosen, in a pick's `from` \

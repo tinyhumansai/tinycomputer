@@ -484,3 +484,73 @@ fn a_short_place_word_names_its_box_only_as_a_labels_first_word() {
         Some("To BLR, Bengaluru Airport India")
     );
 }
+
+#[test]
+fn the_opener_is_the_box_most_particular_to_the_slot() {
+    // Live, for the slot "from city" a trip-type tab "Multi City" came
+    // before the "From DEL" box, and a button wrapping the whole form came
+    // before the box inside it. A control that only shares the slot's
+    // plainer word ("Date Change", "City Guides") is no opener either.
+    use super::enter::named_opener;
+    let screen = |names: &[(&str, bool)]| Screen {
+        app: "browser".to_owned(),
+        window: None,
+        surface: "window".to_owned(),
+        candidates: names
+            .iter()
+            .map(|(name, away)| Candidate {
+                states: if *away {
+                    vec!["offscreen".to_owned()]
+                } else {
+                    Vec::new()
+                },
+                ..node(name, "button", &["Click"], &["form"], 0.0)
+            })
+            .collect(),
+        context: Vec::new(),
+        unexplored: Vec::new(),
+        text_nodes: Vec::new(),
+    };
+    let opener = |screen: &Screen, slot: &str| {
+        let slots = [tinycomputer_bus::Slot {
+            slot: slot.to_owned(),
+            text: "x".to_owned(),
+        }];
+        named_opener(screen, &slots, &BTreeSet::from([0])).and_then(|opener| opener.name)
+    };
+    let flights = screen(&[
+        ("Multi City", false),
+        ("City Guides", false),
+        ("Date Change", false),
+        (
+            "From DEL, Delhi Airport India \u{21cc} To BLR, Bengaluru Airport India Departure \
+             23 Oct 26 Friday Return Tap to add a return date",
+            false,
+        ),
+        ("From DEL, Delhi Airport India", false),
+        ("To BLR, Bengaluru Airport India", false),
+        ("Departure 23 Oct 26 Friday", false),
+    ]);
+    assert_eq!(
+        opener(&flights, "from city").as_deref(),
+        Some("From DEL, Delhi Airport India")
+    );
+    assert_eq!(
+        opener(&flights, "to city").as_deref(),
+        Some("To BLR, Bengaluru Airport India")
+    );
+    assert_eq!(
+        opener(&flights, "departure date").as_deref(),
+        Some("Departure 23 Oct 26 Friday")
+    );
+    let hotel = screen(&[
+        ("Check availability", false),
+        ("Check-in 18 Oct 2026 Sunday", true),
+        ("Check-in 18 Oct 2026", false),
+    ]);
+    assert_eq!(
+        opener(&hotel, "check-in date").as_deref(),
+        Some("Check-in 18 Oct 2026"),
+        "on screen, and holding more of the slot's words"
+    );
+}

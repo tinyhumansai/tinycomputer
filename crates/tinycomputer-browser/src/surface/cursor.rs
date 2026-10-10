@@ -60,11 +60,8 @@ impl BrowserSurface {
         self.block(self.browser.command(&id, command)).ok()
     }
 
-    /// `reference`'s box on screen, in points.
-    fn screen_bounds(&self, reference: &str) -> Option<Rect> {
-        let selector = super::sight::selector(reference);
-        let data = self.command(json!({"action": "boundingbox", "selector": selector}))?;
-        let field = |name: &str| data.get(name).and_then(Value::as_f64);
+    /// Where the page's viewport begins on screen, in points.
+    fn viewport_on_screen(&self) -> Option<(f64, f64)> {
         let window = self.command(json!({"action": "evaluate", "script": VIEWPORT_JS}))?;
         let window: Vec<f64> = window
             .get("result")?
@@ -72,7 +69,15 @@ impl BrowserSurface {
             .iter()
             .filter_map(Value::as_f64)
             .collect();
-        let (left, top) = viewport_origin(&window)?;
+        viewport_origin(&window)
+    }
+
+    /// `reference`'s box on screen, in points.
+    fn screen_bounds(&self, reference: &str) -> Option<Rect> {
+        let selector = super::sight::selector(reference);
+        let data = self.command(json!({"action": "boundingbox", "selector": selector}))?;
+        let field = |name: &str| data.get(name).and_then(Value::as_f64);
+        let (left, top) = self.viewport_on_screen()?;
         let rect = Rect::new(
             left + field("x")?,
             top + field("y")?,
@@ -91,6 +96,21 @@ impl BrowserSurface {
         }
         if let Some(target) = self.screen_bounds(reference) {
             self.cursor.arrive(target);
+        }
+    }
+
+    /// Glides the cursor onto the window's point (`x`, `y`) and returns as
+    /// it lands, as [`BrowserSurface::show_cursor`] does onto an element:
+    /// before a press aimed at a point, such as one outside a popup.
+    pub(super) fn show_cursor_at(&self, x: f64, y: f64) {
+        if !self.shows_cursor() {
+            return;
+        }
+        if let Some((left, top)) = self.viewport_on_screen() {
+            let spot = Rect::new(left + x - 1.0, top + y - 1.0, 2.0, 2.0);
+            if spot.is_valid() {
+                self.cursor.arrive(spot);
+            }
         }
     }
 }

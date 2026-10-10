@@ -21,11 +21,13 @@ A `Surface` has to be able to:
 - `press` a key combination
 - `launch` an application, or bring it to the front if it is already running
 
-Two more methods have a default that most surfaces never need to override:
-`navigate` (load a URL) and `back` (go back in history) both refuse by
-default, because a desktop application has no address bar and no history.
-`tinycomputer-browser`'s implementation overrides both; `tinycomputer-desktop`
-leaves them as the default refusal.
+Three more methods have a default that most surfaces never need to
+override: `navigate` (load a URL) and `back` (go back in history) both refuse
+by default, because a desktop application has no address bar and no history,
+and so does `dismiss_cover` (press the empty layer lying over a target, as a
+person clicks outside a popup), because a desktop application cannot say what
+lies over an element. `tinycomputer-browser`'s implementation overrides all
+three; `tinycomputer-desktop` leaves them as the default refusal.
 
 There is also `settle()`, which does nothing by default. A surface overrides
 it to give an application a moment to react: closing a banner a beat after a
@@ -68,6 +70,7 @@ pub trait Surface: Clone + Send + 'static {
     fn await_change(&self, ms: u64) -> bool { /* pauses, and says it may have */ }
     fn navigate(&self, url: &str) -> DesktopResponse { /* refuses by default */ }
     fn back(&self, app: &str) -> DesktopResponse { /* refuses by default */ }
+    fn dismiss_cover(&self, target: &Candidate) -> DesktopResponse { /* refuses by default */ }
 }
 ```
 

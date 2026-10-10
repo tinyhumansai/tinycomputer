@@ -166,7 +166,15 @@ word of the slot's name (four letters or more, never a word that only says
 "box" or names a kind of control) may show it: a store's search link for the
 slot "search". It is pressed only once Jev agrees it shows that slot's box
 (`OPENER_FLOOR`, 0.8): a shared word alone is no reason, and a link named
-"Email us" shares "email".
+"Email us" shares "email". Of several such controls, the first in the page
+is offered after ranking them: one on screen before one scrolled away, then
+the one holding more of the slot's words ("Check-in …" over "Check
+availability" for "check-in date"), then the one holding the slot's first,
+most particular word ("Departure …" over "Date Change" for "departure
+date"), then one that wraps no other match. For the slot "from city", the
+"From DEL" box is offered, not a trip-type tab "Multi City", nor a button
+wrapping the whole form ("From DEL … To BLR … Departure …"), which a press
+hits at its centre.
 
 A plain `do` step that types ("enter 560001 into the pincode field", "type
 'Maggi' in the search box") runs as this `enter`, read from the step as

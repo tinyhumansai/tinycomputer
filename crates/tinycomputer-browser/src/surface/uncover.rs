@@ -21,9 +21,11 @@ const HOVER_END_MS: u64 = 150;
 /// Lets the focused text box go, so the list of suggestions it holds open
 /// closes (live, a store's search dropdown stayed over its basket button,
 /// and Escape left it there), unless the element is a row of such a list,
-/// then brings the element to the middle of the window; `true` when it
-/// found the element.
-const CENTRE_JS: &str = r"(element => {
+/// then brings the element to the middle of the window at once; `true` when
+/// it found the element. A page that scrolls smoothly (live, a store set
+/// `scroll-behavior: smooth`) would otherwise still be moving the element
+/// when the press lands.
+pub(crate) const CENTRE_JS: &str = r"(element => {
   if (!element) return false;
   const focused = document.activeElement;
   const row = element.closest('[role=option], [role=listbox], [role=menu], [role=menuitem], datalist');
@@ -31,7 +33,7 @@ const CENTRE_JS: &str = r"(element => {
       && focused.matches('input, textarea, [contenteditable=true]')) {
     focused.blur();
   }
-  element.scrollIntoView({ block: 'center', inline: 'center' });
+  element.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
   return true;
 })";
 
@@ -90,6 +92,8 @@ impl BrowserSurface {
     /// control asks for it, through its own card's cover, once more after
     /// a cover the pointer or the scroll left, following a content link
     /// whose press went nowhere, and selecting again what a page ignored.
+    /// A press still refused as covered names what covers its target in
+    /// the error's `details.cover` (`cover.rs`).
     pub(super) fn press_element(
         &self,
         node: Option<&Candidate>,
@@ -130,6 +134,11 @@ impl BrowserSurface {
         };
         let reply = if covered(&reply) && seen {
             self.click_uncovered(reference).unwrap_or(reply)
+        } else {
+            reply
+        };
+        let reply = if covered(&reply) {
+            self.name_cover(reference, reply)
         } else {
             reply
         };

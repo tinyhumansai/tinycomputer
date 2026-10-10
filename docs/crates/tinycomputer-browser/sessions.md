@@ -81,16 +81,65 @@ screenshot of an ordinary article stays under the output size cap (see
 ## The origin allow-list
 
 `SessionOptions::allowed_origins`, when non-empty, is the only set of origins
-this session may navigate to. An entry is either a full origin
-(`https://example.com`) or a host with a leading dot to also admit its
-subdomains (`.example.com`, which becomes agent-browser's `*.example.com`
-pattern). A navigation outside the list is refused before the browser is
-asked to make a request: the cheapest and most certain point to refuse it.
+this session may show pages from. An entry is a full origin
+(`https://example.com`), a host with a leading dot to also admit its
+subdomains (`.example.com`, or `*.example.com`), or `*` for any public host.
+Under `*`, non-global addresses (private, loopback, link-local, shared, and
+their IPv6 and IPv4-in-IPv6 forms) and local names (no dot, or under
+`localhost`, `local`, `internal`, or `home.arpa`) stay refused. Besides web
+pages, a list admits `about:blank`, `about:srcdoc`, a browser error page,
+and a `blob:` page made by an admitted host; never a file, `data:`, or a
+browser setting. The session checks it in `origins/` and never hands it to
+agent-browser:
 
-This is a guard rail, not a sandbox. The scheme is not enforced (the engine
-filters by host only), and a page that is already loaded can still make its
-own requests to other origins; the allow-list only stops *this session's*
-navigations. See "Invariants" in
+- an address is read by the WHATWG URL rules Chrome reads it by (the `url`
+  crate), so one written another way (`http://2130706433/`,
+  `http:\\host\`, a host in percent escapes or full-width digits) is judged
+  as the page it opens;
+- a navigation outside the list (`navigate`, or a raw command that names an
+  address to open, fetch, or put into the page in `url`, `url1`, or `url2`,
+  `addscript` and `addstyle` included) is refused before the browser is
+  asked; a raw `read` of an address, which follows redirects where no page
+  is checked, is refused under any list;
+- every call that acts on or reads the page (`perform`, `evaluate`,
+  `snapshot`, `read_page`, `screenshot`, a raw command, its `title`
+  included) first checks the page the session shows, so nothing is sent to
+  a page that moved out of the list on its own (a timer, a redirect); only
+  a raw wait for the page to load (`waitforloadstate`) and a read of its
+  address (`url`, which a refusal names anyway) are not checked, so a wait
+  runs while a navigation commits; a box lookup (`boundingbox`, whose
+  selector can test whether a text shows) and a permission grant
+  (`permissions`) are checked like any call;
+- the page a call leaves the session on is checked after it, and a refused
+  one is left, back or to `about:blank`, before the call reports
+  `LeftRefusedPage` (the call ran: its effect may stand); a `navigate`
+  reads the page it reached afresh rather than trusting the address the
+  engine reports;
+- a page whose address cannot be read around a call's own work because it
+  is committing a navigation (the engine says its execution context was
+  destroyed) lets the work go ahead, and the next check that can read it
+  catches a refused one; any other failure to read the address fails the
+  call;
+- a task's surface checks the page before every observation, reading its
+  address twice before giving up, and an observation fails rather than read
+  a page it could not check;
+- a session opens on its browser's first page only if the list admits it: a
+  launched browser (a profile can restore its last pages) leaves it, and an
+  attached browser keeps the person's tab as it is and opens a blank tab of
+  the session's own; a session that cannot leave such a page is closed, and
+  the open fails `BlockedByPolicy`.
+
+Only pages are checked. The files a page loads from other hosts (its CDN, its
+APIs, its maps, its frames) load as they would in any browser.
+agent-browser's own domain filter is not used: it refuses every request
+outside its list, which breaks the page itself, and it refuses a profile
+beside a list.
+
+This is a guard rail, not a sandbox. The scheme is not enforced for web pages,
+a page that is already loaded can still make its own requests to other
+origins, and a name is never resolved: under `*`, a public name that leads
+to a local address (a wildcard DNS name, or DNS rebinding) is admitted. The
+allow-list only keeps *this session* off pages outside it. See "Invariants" in
 [`../../technical/specs/unified-agent.md`](../../technical/specs/unified-agent.md)
 for how this fits into the wider safety picture.
 

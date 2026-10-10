@@ -141,6 +141,7 @@ impl<'r, B: AgentBackend + Sync> FlowRun<'r, B> {
             expecting: None,
             step_location: None,
             step_cleared: BTreeSet::new(),
+            step_covered: None,
             front: Front::new(request.dialog_left_open),
         }
     }
@@ -181,6 +182,7 @@ impl<'r, B: AgentBackend + Sync> FlowRun<'r, B> {
         let (ended, halt) = match result {
             Ok(ended) => (ended, None),
             Err(Halt::Failed(note)) => {
+                let note = self.with_cover(note);
                 let ended = Ended::new(StepOutcome::Failed, note.clone());
                 (ended, Some(Halt::Failed(note)))
             }
@@ -291,6 +293,15 @@ impl<'r, B: AgentBackend + Sync> FlowRun<'r, B> {
         steps::run(self, log, action, text, path).await
     }
 
+    /// A failed step's `note`, ending with the press a cover still refused
+    /// in it and what covered it, when one did and no press landed since.
+    fn with_cover(&self, note: String) -> String {
+        match &self.step_covered {
+            Some(covered) => format!("{note}; {covered}"),
+            None => note,
+        }
+    }
+
     /// Resets what one step keeps, before step `path` runs.
     fn begin_step(&mut self, path: &str) {
         path.clone_into(&mut self.step);
@@ -299,6 +310,7 @@ impl<'r, B: AgentBackend + Sync> FlowRun<'r, B> {
         self.frontier.clear();
         self.step_location.clone_from(&self.location);
         self.step_cleared.clear();
+        self.step_covered = None;
         self.front.next_step();
     }
 

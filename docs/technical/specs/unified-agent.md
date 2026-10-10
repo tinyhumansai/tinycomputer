@@ -114,8 +114,8 @@ These are additive to the grammar in [`jev-intent-flows.md`](jev-intent-flows.md
 ### Deterministic
 
 - **Browser engine:** agent-browser. It provides sessions, tabs, refs,
-  locators, state save and load, CDP attach, downloads and uploads, dialogs, and
-  a domain filter.
+  locators, state save and load, CDP attach, downloads and uploads, and
+  dialogs. Its domain filter is not used (see Invariants).
 - **Surfaces and keymap.** Logical keys map to `cmd` on macOS and `ctrl`
   elsewhere.
 - **Workspace:** named surfaces and handoff between them.
@@ -179,8 +179,17 @@ These are additive to the grammar in [`jev-intent-flows.md`](jev-intent-flows.md
 - A payment page ends at a `checkpoint`, and no payment data is typed, ever.
 - Irreversible actions need `allow_destructive` or an explicit approval via
   `ContinueTask`.
-- The origin allow-list is enforced per task by agent-browser's domain filter.
-  It is a guard rail, not a sandbox.
+- The origin allow-list is enforced per task on pages, by the browser session
+  (`tinycomputer-browser` `origins/`), reading addresses by the WHATWG URL
+  rules the browser does: a navigation outside it is refused before it is
+  sent, no call acts on or reads a page outside it, and a page a task is
+  taken to outside it is left before it is read or acted on. A name is never
+  resolved, so `*` refuses only what is local by how it is written.
+  agent-browser's domain filter is not used: it
+  refuses every request outside the list, so a page's own CDN and APIs fail,
+  it stalls or closes the browser when it cannot install itself on a new
+  target, and it refuses a profile beside a list. It is a guard rail, not a
+  sandbox.
 - Browser tests that launch Chromium run in the Docker lab
   ([`../docker-lab.md`](../docker-lab.md)) or behind `TINYCOMPUTER_LIVE_BROWSER=1`.
 

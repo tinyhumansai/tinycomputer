@@ -36,6 +36,7 @@ mod error;
 mod fake;
 #[cfg(feature = "agent-browser")]
 mod linked;
+mod origins;
 mod outputs;
 mod reply;
 mod sessions;

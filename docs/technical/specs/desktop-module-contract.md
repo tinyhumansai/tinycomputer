@@ -42,7 +42,10 @@ engine's argument types, the permission preflight, and the bus surface.
   `JevConfiguration.fast`, the planner's `LanguageModelProvider` routes, and
   `Capabilities.decision_model`, `planner_model`, `rescue_model`, and
   `output_model`; 2.9 added `RunFlowRequest.dialog_left_open` and
-  `FlowRunResult.dialog_left_open`; all optional) return an
+  `FlowRunResult.dialog_left_open`; 2.10 added the `StartTask` constraints
+  `browser_executable` and `browser_profile`, and `*` (any public host) among
+  the allowed origins, which the module checks on pages rather than on every
+  request; all optional) return an
   `AgentResponse` instead — see [`unified-agent.md`](unified-agent.md). They
   share this interface because a TinyBus module exports one interface. A
   task hands `dialog_left_open` from one run's result to its next run's

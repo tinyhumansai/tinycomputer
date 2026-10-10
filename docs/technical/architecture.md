@@ -245,8 +245,10 @@ None of them trusts a model's judgement.
 - A control classified as payment, or any click on a screen that shows card
   fields, stops the run, and the task controller makes that a final
   checkpoint. Card data is always a secret fact, and it is typed only under
-  `payment: "fill_then_approve"`, which is limited to the caller's
-  `origins` and still waits for approval before the control that pays.
+  `payment: "fill_then_approve"`, which needs `origins` naming the sites
+  (never `*`), types only on their pages (a payment provider's frame on such
+  a page included), and still waits for approval before the control that
+  pays.
 - Secret values never reach Jev: they are masked to `${name}` in everything
   it is sent, what a field holds included. Shared values brief Jev, and
   tasks let it read field contents (`include_values`). The planner and the

@@ -115,13 +115,23 @@ Two more settings trade speed for care:
 
 - `surfaces`: `browser`, `desktop`, or both. A task limited to the browser
   can't reach your desktop apps at all, even by mistake.
-- `origins`: the websites it may load, such as `https://.goindigo.in` for a
-  site and its subdomains. This is a guard rail rather than a sandbox.
+- `origins`: the websites it may open pages on, such as
+  `https://.goindigo.in` for a site and its subdomains, or `*` for any public
+  site. Pages are checked, not the pictures and scripts a page loads from
+  elsewhere. This is a guard rail rather than a sandbox.
 - `browser_endpoint`: use your own running Chrome instead of starting a new
   one. Booking sites often turn away a fresh automated browser but serve a
   person's own. When the task ends, it disconnects and leaves your browser
   open.
 - `headed`: show the browser window so you can watch.
+- `browser_executable`: the full path of the Chrome to start, when it isn't
+  where the module looks.
+- `browser_profile`: a folder, given as a full path, the browser keeps its
+  profile in, so a site you signed into once stays signed in for the next
+  task.
+
+Your app sets these two from its own settings; they don't go with
+`browser_endpoint`, which starts no browser.
 
 ### How it treats irreversible actions and payment
 

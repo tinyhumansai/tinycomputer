@@ -31,6 +31,9 @@ tinycomputer-core = { workspace = true }
 # The agent's cursor: where it aims and the human path it glides along,
 # drawn in the page before each action. Cosmetic; it sends no input.
 tinycomputer-cursor = { workspace = true }
+# Addresses checked against a session's allowed origins are read by the
+# WHATWG URL rules a browser reads them by (`origins/`).
+url = { workspace = true }
 # Per-session locks held across engine calls; `rt` for the runtime handle a
 # blocking surface call runs the async browser on.
 tokio = { workspace = true, features = ["sync", "rt"] }

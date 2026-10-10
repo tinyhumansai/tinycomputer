@@ -56,7 +56,9 @@ the run:
 If you want the card form filled in, set `payment: "fill_then_approve"`. The
 task fills the form from secret details you gave it, then pauses as
 `needs_approval` before pressing Pay. This mode needs a list of allowed
-websites (`origins`), so card details are only typed on sites you named.
+websites (`origins`, never `*`), so card details are only typed on pages of
+sites you named, including the payment form such a page shows in a frame of
+its payment provider's.
 
 `allow_destructive: true` turns all of this off and lets the task press
 irreversible controls, payment included, without asking. Use it only when
@@ -113,15 +115,22 @@ rather than guessing. There's never a fallback click.
 
 - **Surfaces.** A task limited to the browser gets no desktop at all, and the
   other way round.
-- **Websites.** `origins` limits which sites the browser may load.
+- **Websites.** `origins` limits which sites the browser may open pages on;
+  the files a page loads from elsewhere (its pictures, scripts, and frames)
+  load as in any browser. `*` admits any public site and refuses addresses
+  and names that are local by how they are written (`localhost`, a
+  home-network address, a `.local` name). It never looks a name up, so a
+  public name that leads to your own network is not refused: where local
+  services must stay unreachable, run the browser where they are.
 - **Budgets.** Caps on actions, questions to Jev, time, and rescues apply to
   the whole task. Pausing never refills them.
 - **Your location.** When a task presses a page's own "use my current
   location" button, the browser would ask you in a bubble the agent cannot
-  see. In a browser tinycomputer launched itself on a throwaway profile, the
-  press grants the location permission for that session in your place. It
-  never does in your own browser (an `endpoint`) or profile (a
-  `user_data_dir`): there the bubble is yours to answer.
+  see. In a browser tinycomputer launched itself, on a throwaway profile or
+  the one a task keeps between runs, the press grants the location
+  permission for that browser while it runs, in your place; the grant is not
+  saved in the profile. It never does in your own running browser (an
+  `endpoint`): there the bubble is yours to answer.
 - **New tabs.** A pressed link or form that would open a new tab opens in
   the agent's tab instead, and so does a page script's new window for an
   address on the same site, for two seconds after a press. Another site's
@@ -139,8 +148,9 @@ These checks lower the risk. They don't remove it.
 
 - The word lists catch the common labels. A site that labels its pay button
   "Proceed" on a page with no card fields won't be caught by words alone.
-- `origins` is a guard rail rather than a sandbox. It relies on the browser
-  engine's domain filter.
+- `origins` is a guard rail rather than a sandbox. The module checks the pages
+  a task opens or is taken to, not the files those pages load, so a page on an
+  allowed site can still reach other hosts on its own.
 - Shared facts are visible to Jev by design. If a detail shouldn't be, mark it
   secret.
 

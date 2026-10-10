@@ -67,14 +67,16 @@ impl Fake {
     }
 
     /// Whether a page script ran besides those every press runs: the one
-    /// that keeps a press in the tab, and the one that brings a control
-    /// sight found into the window.
+    /// that keeps a press in the tab, the one that brings a control sight
+    /// found into the window, and the one that names what covers a press
+    /// the page refused.
     pub(crate) fn evaluated_besides_every_press(&self) -> bool {
         self.sent().iter().any(|command| {
             let script = command["script"].as_str().unwrap_or_default();
             command["action"] == "evaluate"
                 && !script.contains("__tcOpen")
                 && !script.starts_with(crate::surface::INTO_VIEW_JS)
+                && !script.starts_with(crate::surface::COVER_JS)
         })
     }
 

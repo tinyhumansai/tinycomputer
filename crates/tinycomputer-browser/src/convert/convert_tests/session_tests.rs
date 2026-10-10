@@ -1,9 +1,8 @@
-//! Tests for the launch a session starts with, and its allowed domains.
+//! Tests for the launch a session starts with.
 
 use serde_json::json;
 use tinycomputer_bus::browser::{SessionOptions, Viewport};
 
-use crate::convert::session::allowed_domains;
 use crate::convert::{launch, viewport};
 
 #[test]
@@ -39,27 +38,11 @@ fn every_session_option_reaches_its_launch_field() {
             "userAgent": "agent",
             "profile": "/profiles/trip",
             "downloadPath": "/downloads",
-            "allowedDomains": ["example.com"],
-        })
+        }),
+        "the allowed origins stay with the session, which checks pages itself"
     );
     assert_eq!(
         viewport(&options),
         json!({"action": "viewport", "width": 800, "height": 600, "deviceScaleFactor": 1.0, "mobile": false})
-    );
-}
-
-#[test]
-fn origins_become_host_patterns_and_subdomain_wildcards() {
-    let origins = [
-        "https://Example.com",
-        "https://.booking.com",
-        "http://localhost:8080/path",
-        "plain.host",
-        "https://",
-    ]
-    .map(str::to_owned);
-    assert_eq!(
-        allowed_domains(&origins),
-        ["example.com", "*.booking.com", "localhost", "plain.host"]
     );
 }

@@ -316,6 +316,11 @@ pub(super) struct FlowRun<'r, B> {
     /// control signature, across every loop that attends within it: an
     /// Escape or a close that did not clear it once will not the next time.
     pub(super) step_cleared: BTreeSet<String>,
+    /// The current step's last press that stayed covered, and what covered
+    /// it, while no press has landed since (`act/uncover.rs`): its failure
+    /// says so, so a rescue deals with the cover rather than redo the steps
+    /// before it.
+    pub(super) step_covered: Option<String>,
     /// What is in front, and whether the run's own press put it there
     /// (`front.rs`); built knowing whether the task's run before this one
     /// left its own dialog in front ([`RunFlowRequest::dialog_left_open`]).

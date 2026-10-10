@@ -1,4 +1,9 @@
-//! Starting a session: the explicit launch, the viewport, and the allowed domains.
+//! Starting a session: the explicit launch and the viewport.
+//!
+//! The allowed origins are not handed to the engine: agent-browser would
+//! refuse every request outside them, a page's own files and APIs included,
+//! and refuse a profile beside them. The session checks pages itself
+//! (`crate::origins`).
 
 use serde_json::{Value, json};
 use tinycomputer_bus::browser::SessionOptions;
@@ -27,10 +32,6 @@ pub(crate) fn launch(options: &SessionOptions) -> Value {
             command[key] = json!(value);
         }
     }
-    let domains = allowed_domains(&options.allowed_origins);
-    if !domains.is_empty() {
-        command["allowedDomains"] = json!(domains);
-    }
     command
 }
 
@@ -44,33 +45,4 @@ pub(crate) fn viewport(options: &SessionOptions) -> Value {
         "deviceScaleFactor": options.viewport.device_scale_factor,
         "mobile": options.viewport.mobile,
     })
-}
-
-/// Origins as agent-browser domain patterns.
-///
-/// `https://example.com` admits that host; `https://.example.com` admits it
-/// and its subdomains, which agent-browser spells `*.example.com`. The
-/// engine filters by host, so the scheme is not enforced — the origin
-/// allow-list was a guard rail, never a sandbox, and still is.
-#[must_use]
-pub(crate) fn allowed_domains(origins: &[String]) -> Vec<String> {
-    origins
-        .iter()
-        .filter_map(|origin| {
-            let host = origin
-                .split_once("://")
-                .map_or(origin.as_str(), |(_, rest)| rest)
-                .split(['/', ':'])
-                .next()?
-                .trim()
-                .to_ascii_lowercase();
-            if host.is_empty() {
-                None
-            } else if let Some(domain) = host.strip_prefix('.') {
-                Some(format!("*.{domain}"))
-            } else {
-                Some(host)
-            }
-        })
-        .collect()
 }

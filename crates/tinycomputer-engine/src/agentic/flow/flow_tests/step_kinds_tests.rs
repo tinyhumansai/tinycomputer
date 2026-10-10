@@ -263,6 +263,17 @@ async fn browse_fails_the_flow_where_there_is_no_browser_or_no_page() {
             run.result.steps[0].note
         );
     }
+    // The note keeps the failure's own words after its code, so a browser
+    // that could not be started says what to set.
+    let unopened = run(
+        App::quirky(Quirk::FailLaunch),
+        json!({"app": "browser", "steps": [{"browse": "https://flights.test"}]}),
+    )
+    .await;
+    assert_eq!(
+        unopened.result.steps[0].note,
+        "https://flights.test could not be opened: APP_NOT_FOUND (no such app)"
+    );
     let unreadable = run(
         App::quirky(Quirk::FailObserve),
         json!({"app": "browser", "steps": [{"browse": "https://flights.test"}]}),
@@ -272,6 +283,30 @@ async fn browse_fails_the_flow_where_there_is_no_browser_or_no_page() {
         unreadable.result.steps[0]
             .note
             .contains("no readable page yet")
+    );
+}
+
+#[test]
+fn a_failure_is_noted_by_its_code_and_the_first_line_of_its_words() {
+    use super::steps::failure;
+    let refused = |message: &str| {
+        tinycomputer_bus::DesktopResponse::err(
+            "launch",
+            tinycomputer_bus::DesktopError::new("BROWSER_UNAVAILABLE", message),
+        )
+    };
+    assert_eq!(
+        failure(&refused(
+            "browser unavailable: no Chrome or Chromium was found on this machine; give the path of the browser to use\nChecked: /Applications"
+        )),
+        "BROWSER_UNAVAILABLE (browser unavailable: no Chrome or Chromium was found on this machine; give the path of the browser to use)"
+    );
+    assert_eq!(failure(&refused("  ")), "BROWSER_UNAVAILABLE");
+    let long = failure(&refused(&"x".repeat(300)));
+    assert_eq!(long, format!("BROWSER_UNAVAILABLE ({}…)", "x".repeat(200)));
+    assert_eq!(
+        failure(&tinycomputer_bus::DesktopResponse::ok("launch", json!({}))),
+        "unknown error"
     );
 }
 

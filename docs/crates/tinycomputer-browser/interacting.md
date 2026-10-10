@@ -103,6 +103,57 @@ click. Step 3's dialog check exists specifically so this shortcut never
 becomes a way to click through something that is actually blocking the
 page, only through a card's own content sitting on top of itself.
 
+### Once more, centred, and then naming what is in the way
+
+A press still covered after that, on a control sight found, is tried once
+more by `click_uncovered` (`surface/uncover.rs`): the focused text box is
+let go, so a list of suggestions it holds open can close, the control is
+brought to the middle of the window at once (`CENTRE_JS`, with
+`behavior: 'instant'`: on a page that sets `scroll-behavior: smooth`, a
+smooth scroll would still be moving the control when the press lands), the
+pointer moves off to the window's corner, so a panel it raised by hovering
+closes, and the press goes again.
+
+A press refused even then says what covers its target, in the error's
+`details`, read by `COVER_JS` (`surface/cover.rs`) at the target's middle,
+looking into open shadow roots, where a page's components draw their
+controls:
+
+- `cover`: what is on top there, as a person would say it: a control by its
+  role and name (`button "Select Location"`), a dialog, a layer by the text
+  it shows or holds, a picture, or `an empty layer`;
+- `empty_layer`: whether that is an empty layer a press outside a popup
+  closes, as the backdrop a popup or a box's list of suggestions leaves over
+  a page is. It must cover at least half the window, with no control,
+  dialog, text, or picture where it covers the target; belong to no
+  component (no shadow root, no custom element); be placed over the page
+  (it, or its nearest placed ancestor, is `fixed` or `absolute`); and lie
+  over a control sight found by its mark, so the target can be told apart
+  from what lies beneath. A ref of the tree never has one.
+
+The flow's history then names the cover instead of "something", and a step
+that fails on it says so. Nothing is named when nothing shows at the
+target's middle.
+
+`Surface::dismiss_cover` (`BrowserSurface::press_cover`) presses such an
+empty layer the way a person clicks outside a popup to close it. Of 49
+points spread evenly over the window (`SPOT_GRID`), it takes the first
+where the layer itself is on top and, beneath it, nothing could take a
+press: no control, nothing that shows a pointer, nothing of the target.
+The layer stops taking the pointer only for the instant each point beneath
+it is read, and its own style is put back as it was. The press goes there
+as raw mouse events, with the on-screen cursor gliding to the point in a
+visible session, so even a layer that closes on the button going down lets
+nothing beneath take it; then the layer is given `LAYER_GONE_MS` (150 ms)
+to go. A cover that is a control, a dialog, or anything that shows
+something is never pressed for its target, and neither is an empty layer
+with no such point, or one that cannot be read: the call is refused with
+`NOT_ACTIONABLE` (the cover in `details.cover` when it was read).
+`dismissed` is `null` when nothing covers the target any more. Live, a
+store's search box left its suggestions open over the page, every control
+outside them read as covered, and Escape left them there: its basket button
+was refused until rescues added the wrong items.
+
 ### Selecting tabs, radios, and options that ignore a trusted click
 
 Some pages simply do not react to a synthetic click the moment they have

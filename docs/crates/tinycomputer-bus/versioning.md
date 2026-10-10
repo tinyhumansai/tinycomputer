@@ -9,7 +9,7 @@ code, so this page exists mostly to keep them apart.
 ## `CONTRACT_VERSION`: does this host understand this module
 
 ```rust,ignore
-pub const CONTRACT_VERSION: (u32, u32) = (2, 8);
+pub const CONTRACT_VERSION: (u32, u32) = (2, 10);
 ```
 
 This describes the *vocabulary*: the member set and the payload shapes,
@@ -45,17 +45,17 @@ Two conditions, both necessary:
    relies on changed shape or disappeared, so a mismatched major is refused
    outright, in either direction.
 2. **The module must be at least as new, minor-wise, as the host.** A host
-   built against `(2, 8)` expects at least the members and fields that
-   existed at `(2, 8)`. A module reporting `(2, 7)` might be missing one of
-   them, so it is rejected. A module reporting `(2, 9)` has everything the
+   built against `(2, 10)` expects at least the members and fields that
+   existed at `(2, 10)`. A module reporting `(2, 9)` might be missing one of
+   them, so it is rejected. A module reporting `(2, 11)` has everything the
    host expects, plus something newer the host simply does not use yet, so
    it is accepted.
 
 ```rust,ignore
-assert!(is_compatible(CONTRACT_VERSION));   // (2, 8), the exact version this crate ships
-assert!(is_compatible((2, 9)));             // a newer, still-compatible module
-assert!(!is_compatible((2, 7)));            // an older module, missing something
-assert!(!is_compatible((1, 8)));            // a different major, all bets off
+assert!(is_compatible(CONTRACT_VERSION));   // (2, 10), the exact version this crate ships
+assert!(is_compatible((2, 11)));            // a newer, still-compatible module
+assert!(!is_compatible((2, 9)));            // an older module, missing something
+assert!(!is_compatible((1, 10)));           // a different major, all bets off
 ```
 
 Call `is_compatible` before a host's first real call to a freshly loaded

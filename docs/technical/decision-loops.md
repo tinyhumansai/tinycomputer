@@ -302,10 +302,10 @@ then clicks through at the link's position, but only when the exact target
 that label) sits in the same card as the cover and no dialog is involved.
 Anything else comes back covered: a front layer's least committal control (a
 consent banner's "Allow Selection"; never the target's own layer or one the
-step names), or else Escape, is pressed once, and the *same* vetted target
-retried (`do` and `pick` alike), so nothing exposed by
-dismissing whatever covered the click is ever pressed without going through
-grounding and `is_destructive` again on a later turn.
+step names) or else Escape, then an empty layer still there where nothing lies
+beneath (`Surface::dismiss_cover`), each once, and the *same* target retried
+(`do` and `pick`; the history and a failed note name the cover): nothing a
+dismissal exposes is pressed before grounding and `is_destructive` again.
 
 A dismissal the completion judge would otherwise never see ends the step
 immediately: when the last action pressed a control whose own words the step's

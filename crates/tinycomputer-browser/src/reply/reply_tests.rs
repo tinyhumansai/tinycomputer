@@ -80,6 +80,16 @@ fn engine_messages_map_to_what_the_caller_should_do() {
         ("CDP connection failed: refused", |e| {
             matches!(e, Error::BrowserUnavailable { .. })
         }),
+        (
+            "Chrome exited before providing DevTools URL (no stderr output from Chrome)",
+            |e| matches!(e, Error::BrowserUnavailable { .. }),
+        ),
+        ("Timeout waiting for Chrome DevTools URL", |e| {
+            matches!(e, Error::BrowserUnavailable { .. })
+        }),
+        ("Chrome launch task failed: cancelled", |e| {
+            matches!(e, Error::BrowserUnavailable { .. })
+        }),
         ("Invalid URL: nope", |e| {
             matches!(e, Error::InvalidInput { .. })
         }),

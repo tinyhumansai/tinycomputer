@@ -91,9 +91,20 @@ pub(super) fn run_outcome(
                 .rev()
                 .find(|step| step.outcome == StepOutcome::Failed);
             let index = failure.and_then(|step| top_index(&step.path));
+            let reason =
+                failure.map_or_else(|| "a step failed".to_owned(), |step| step.note.clone());
+            // No step a rescue writes starts a browser that will not start:
+            // the task fails at once, saying what to set. Live, four rescues
+            // of a bare `BROWSER_UNAVAILABLE` spent minutes before giving up.
+            if failure.is_some_and(no_browser) {
+                return (
+                    failed(index, reason, NO_BROWSER.to_owned(), false),
+                    Some(result),
+                );
+            }
             let mut next = failed(
                 index,
-                failure.map_or_else(|| "a step failed".to_owned(), |step| step.note.clone()),
+                reason,
                 "the screen may not offer what the step describes; reword it, split it, or take over"
                     .to_owned(),
                 true,
@@ -243,6 +254,18 @@ pub(super) fn finished(steps: &[StepReport]) -> usize {
                 && matches!(step.outcome, StepOutcome::Done | StepOutcome::AlreadyDone)
         })
         .count()
+}
+
+/// The hint for a task whose browser could not be started.
+const NO_BROWSER: &str = "no browser could be started: give the task the path of Chrome or Chromium (constraints.browser_executable, or the module's browser.executable), then start it again";
+
+/// Whether `step` failed because no browser could be started: its last
+/// action, opening the browser or an address in it, was refused with
+/// `BROWSER_UNAVAILABLE`.
+fn no_browser(step: &StepReport) -> bool {
+    step.actions
+        .last()
+        .is_some_and(|action| !action.ok && action.note == "BROWSER_UNAVAILABLE")
 }
 
 fn failed(step: Option<usize>, reason: String, hint: String, recoverable: bool) -> Next {

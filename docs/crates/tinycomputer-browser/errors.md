@@ -27,8 +27,9 @@ a host is supposed to see and do about it.
 | `StaleRef` | `StaleRef` | Same remedy as above, spelled out explicitly: the ref belonged to an earlier reading of this page. |
 | `NotActionable` | `NotActionable` | The element exists but could not be acted on right now: covered, disabled, off-document, or behind a JavaScript dialog that has to be answered first. The message names the obstruction where the browser could identify it. |
 | `Timeout` | `Timeout` | The operation ran out of time. A click or a submission may already have landed, so look at the page (take a fresh snapshot) before retrying, perhaps with a longer deadline; never repeat it blind. A timeout on a member that only looks — open a session, snapshot, read, screenshot, wait for a download — changed nothing, so over the bus its hint is a plain retry. |
-| `BlockedByPolicy` | `BlockedByPolicy` | Never retry. The session's `allowed_origins` refused this destination, and the answer will not change. |
-| `BrowserUnavailable` | `BrowserUnavailable` | Not something a caller can fix by choosing differently: this is a host or deployment problem (no browser could be launched or reached). |
+| `BlockedByPolicy` | `BlockedByPolicy` | Never retry. The session's `allowed_origins` refused this destination, or the page the session showed, before the call was sent, and the answer will not change. |
+| `LeftRefusedPage` | `BlockedByPolicy` (same wire name) | The call ran, and its work (a click, a key, a script, a redirect) took the session to a page `allowed_origins` refuses; the session left it. Its effect may stand: check before repeating it. Kept apart from `BlockedByPolicy` so its delivery is never claimed. |
+| `BrowserUnavailable` | `BrowserUnavailable` | Not something a caller can fix by choosing differently: this is a host or deployment problem (no browser could be launched or reached). A browser the module launches says what to set: no Chrome or Chromium found ("give the path of the browser to use"), or a binary given that would not start ("check that its path names Chrome or Chromium"); one attached to keeps the engine's words. |
 | `PageError` | `PageError` | The page itself raised a JavaScript exception, or the browser rejected a command. The same request fails the same way again: inspect the page and revise the request (its hint is `inspect_state_then_revise_request`, not retryable). |
 | `NoSuchOutput` | `NoSuchOutput` | The held screenshot or PDF being asked for is unknown or has expired. |
 | `LimitExceeded` | `LimitExceeded` | A bound was hit: too many sessions, too many held outputs, or an output larger than the module will hold. |
@@ -38,17 +39,21 @@ a host is supposed to see and do about it.
 `Error::envelope` marks a failure `not_delivered` (so retrying is safe) only
 when it is decided before anything reaches the page: `NoSuchSession` and
 `NoSuchOutput`, looked up locally, and `StaleRef` and `BlockedByPolicy`,
-refused inside agent-browser by its ref lookup and domain filter before any
-input is sent. Every other variant can follow work already done, so its
-delivery is left `unknown` rather than claimed.
+refused by agent-browser's ref lookup or the session's allowed origins before
+any input is sent. A page refused after a call's work is `LeftRefusedPage`:
+the page is left, and its delivery stays `unknown`, since a click on a listed
+site's "Pay" that lands on an unlisted bank page has paid. Every other
+variant can follow work already done, so its delivery is left `unknown`
+rather than claimed.
 
 `errors::is_agent_recoverable` (in the bus crate) is the one further
 decision that gets made on top of this table: whether a model can plausibly
 recover by choosing differently, versus needing a human or an operator.
 `InvalidInput`, `NoSuchElement`, `StaleRef`, `NotActionable`, `Timeout`, and
 `PageError` are recoverable this way; `NoSuchSession`,
-`BlockedByPolicy`, `BrowserUnavailable`, `NoSuchOutput`, `LimitExceeded`,
-and `ModuleFailed` are not.
+`BlockedByPolicy` (and `LeftRefusedPage`, which shares its name),
+`BrowserUnavailable`, `NoSuchOutput`, `LimitExceeded`, and `ModuleFailed`
+are not.
 
 ## Where the classification actually happens
 
@@ -59,7 +64,10 @@ get sorted into the table above, matched against the engine's actual
 message texts: `"Unknown ref: @e12 ..."` becomes `StaleRef`, anything
 starting with `"could not locate element with role="` becomes `StaleRef`
 too, `"... is not in the allowed domains list"` becomes `BlockedByPolicy`
-(with the refused host pulled out of the message's own quoting),
+(with the refused host pulled out of the message's own quoting; the
+session refuses pages outside its allowed origins itself and never hands
+them to agent-browser, so this only comes from agent-browser's own domain
+filter, set by a raw `launch` command that carries `allowedDomains`),
 `"... is covered by ..."` or `"not interactable"` becomes `NotActionable`,
 and so on down the list in `classify`.
 

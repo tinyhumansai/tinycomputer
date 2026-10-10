@@ -107,6 +107,9 @@ fn every_variant() -> Vec<Error> {
         Error::BlockedByPolicy {
             url: "https://evil.test/".to_string(),
         },
+        Error::LeftRefusedPage {
+            url: "https://evil.test/".to_string(),
+        },
         Error::browser_unavailable("no chrome on this host"),
         Error::page("ReferenceError: x is not defined"),
         Error::NoSuchOutput {
@@ -179,10 +182,27 @@ fn a_refused_navigation_says_not_to_retry() {
             .suggestion
             .is_some_and(|s| s.starts_with("do not retry"))
     );
-    // The domain filter refuses before any navigation reaches the page.
+    // The allowed origins refuse before any navigation reaches the page.
     assert_eq!(
         envelope.disposition.delivery,
         DeliveryDisposition::NotDelivered
+    );
+}
+
+#[test]
+fn a_page_refused_after_the_call_ran_is_the_same_refusal_but_may_have_taken_effect() {
+    // A click on a listed site's "Pay" that lands on an unlisted bank page
+    // paid: a host that retried "nothing was delivered" would pay twice.
+    let envelope = Error::LeftRefusedPage {
+        url: "https://bank.test/3ds".to_owned(),
+    }
+    .envelope();
+    assert_eq!(envelope.code, "POLICY_DENIED");
+    assert_eq!(envelope.disposition.delivery, DeliveryDisposition::Unknown);
+    assert!(
+        envelope
+            .suggestion
+            .is_some_and(|s| s.contains("check what it did"))
     );
 }
 

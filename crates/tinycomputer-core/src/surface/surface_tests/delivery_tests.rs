@@ -253,4 +253,6 @@ fn a_surface_settles_instantly_and_has_no_addresses_unless_it_says_otherwise() {
     assert_eq!(refused.error.unwrap().code, "ACTION_NOT_SUPPORTED");
     let refused = Surface::back(&TextBackend::default(), "Mail");
     assert_eq!(refused.error.unwrap().code, "ACTION_NOT_SUPPORTED");
+    let refused = Surface::dismiss_cover(&TextBackend::default(), &Candidate::default());
+    assert_eq!(refused.error.unwrap().code, "ACTION_NOT_SUPPORTED");
 }

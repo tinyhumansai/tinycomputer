@@ -25,6 +25,23 @@ impl Surface for BrowserSurface {
     ) -> std::result::Result<Screen, Box<DesktopResponse>> {
         // A page once read is no longer the one opened early.
         let _opened = self.early_page();
+        // Under a list, a page the allowed origins refuse, however the task
+        // came to it, is left before it is read or acted on, and a page whose
+        // address cannot be read is not read either.
+        if !self.options.allowed_origins.is_empty() {
+            let id = self
+                .ensure_session()
+                .map_err(|error| Box::new(failure("observe", &error)))?;
+            let checking = self.browser.check_page(&id);
+            self.block(async { tokio::time::timeout(READ_TIMEOUT, checking).await })
+                .unwrap_or_else(|_| {
+                    Err(Error::timeout(
+                        "observe",
+                        u64::try_from(READ_TIMEOUT.as_millis()).unwrap_or(u64::MAX),
+                    ))
+                })
+                .map_err(|error| Box::new(failure("observe", &error)))?;
+        }
         if self.perception == Perception::Sight
             && let Some(mut screen) = self.see(root)
         {
@@ -307,6 +324,10 @@ impl Surface for BrowserSurface {
 
     fn back(&self, _app: &str) -> DesktopResponse {
         self.perform("back", Action::Back)
+    }
+
+    fn dismiss_cover(&self, target: &Candidate) -> DesktopResponse {
+        self.press_cover(&target.ref_id)
     }
 }
 

@@ -2610,6 +2610,7 @@ dependencies = [
  "tinycomputer-core",
  "tinycomputer-cursor",
  "tokio",
+ "url",
 ]
 
 [[package]]

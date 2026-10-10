@@ -6,12 +6,15 @@ use tinycomputer_bus::JevOperation;
 use crate::agentic::flow::{
     FlowRun, Halt, StepLog,
     backend::{AgentBackend, deliver_text},
-    view::{Screen, element_kind, label},
+    view::{Candidate, Screen, element_kind, label},
 };
 
 use super::{
     REVEAL_TURNS,
-    date::{MAX_MONTHS, is_next_month, looks_like_date},
+    date::{
+        BARE_DAYS, DAYS_REACH, HEADING_REACH, MAX_MONTHS, heads_month_of, is_next_month,
+        looks_like_date, names_a_month,
+    },
     matching::{clickable, lists_more_than, mentions, search_text},
 };
 
@@ -68,7 +71,8 @@ impl<B: AgentBackend + Sync> FlowRun<'_, B> {
     }
 
     /// Pages a calendar forward, one month at a time, until a control shows
-    /// `date`; stops at [`MAX_MONTHS`] or where there is no next month.
+    /// `date` or the calendar heads its month; stops at [`MAX_MONTHS`] or
+    /// where there is no next month.
     async fn page_to(&mut self, log: &mut StepLog, date: &str) -> Result<(), Halt> {
         for _ in 0..MAX_MONTHS {
             let screen = self.look().await?;
@@ -90,6 +94,14 @@ impl<B: AgentBackend + Sync> FlowRun<'_, B> {
             else {
                 return Ok(());
             };
+            // A calendar whose days show bare numbers (a fare beside each)
+            // names no day's month: its heading does, and the day is on
+            // screen however it reads. Live, a hotel site's open days
+            // showed a number and a fare, and its calendar was paged a year
+            // past the month it wanted.
+            if heads_its_month(&screen, &next, date) {
+                return Ok(());
+            }
             let clicked = next.clone();
             let reply = self
                 .act(log, "click", Some(&next), move |backend| {
@@ -166,4 +178,61 @@ impl<B: AgentBackend + Sync> FlowRun<'_, B> {
         }
         Ok(())
     }
+}
+
+/// Roles of a control that offers a month to choose rather than heading
+/// the one shown: a month menu's options, a strip of month tabs.
+const CHOICE_ROLES: &[&str] = &[
+    "option",
+    "tab",
+    "radio",
+    "menuitem",
+    "menuitemradio",
+    "menuitemcheckbox",
+];
+
+/// Whether the calendar `next` pages heads the month of `date` while its
+/// days name none: [`BARE_DAYS`] days or more within [`DAYS_REACH`] nodes of
+/// that arrow show only their number, and a heading ([`heads_month_of`])
+/// that is no choice of month sits within [`HEADING_REACH`] nodes of it, in
+/// document order. A calendar whose days name their month is paged by them
+/// alone, and numbers or the same words elsewhere on the page (a results
+/// list's pages, months to fly in) say nothing of the month it shows.
+pub(in crate::agentic::flow) fn heads_its_month(
+    screen: &Screen,
+    next: &Candidate,
+    date: &str,
+) -> bool {
+    let bare = clickable(&screen.candidates)
+        .iter()
+        .filter(|candidate| {
+            candidate.order.abs_diff(next.order) <= DAYS_REACH && bare_day(candidate)
+        })
+        .count();
+    bare >= BARE_DAYS
+        && screen
+            .candidates
+            .iter()
+            .chain(&screen.text_nodes)
+            .filter(|node| {
+                node.order.abs_diff(next.order) <= HEADING_REACH
+                    && !CHOICE_ROLES
+                        .iter()
+                        .any(|role| node.role.eq_ignore_ascii_case(role))
+            })
+            .filter_map(|node| node.name.as_deref())
+            .any(|text| heads_month_of(text, date))
+}
+
+/// Whether `candidate` is a calendar day that names no month: its label
+/// starts with a day's number ("23", "23 6,085"), and neither the label nor
+/// its description names a month.
+fn bare_day(candidate: &Candidate) -> bool {
+    let name = candidate.name.as_deref().unwrap_or_default();
+    name.split_whitespace()
+        .next()
+        .and_then(|word| word.parse::<u8>().ok())
+        .is_some_and(|day| (1..=31).contains(&day))
+        && !names_a_month(name)
+        && !candidate.description.as_deref().is_some_and(names_a_month)
 }

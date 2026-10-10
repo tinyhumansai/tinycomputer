@@ -79,6 +79,7 @@ Every method on `Surface` is handled, but not all the same way:
 | `launch` | By the named application; success makes that side active. |
 | `navigate` | Always the browser (there is no desktop equivalent); failure never activates it. |
 | `back` | The active side if it is the browser, else the desktop; there is no browser fallback if the desktop is active and has no browser. |
+| `dismiss_cover` | Same as `back`: the active side if it is the browser, else the desktop, which refuses it, since only a page can say what lies over a control. |
 | `settle`, `settle_briefly`, `await_change` | The active side, or the desktop if the browser is not active; with neither, nothing changes. |
 
 ## Reading what is on screen without acting

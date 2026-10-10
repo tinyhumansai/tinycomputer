@@ -53,6 +53,57 @@ async fn a_failed_launch_opens_nothing() {
 }
 
 #[tokio::test]
+async fn a_browser_that_cannot_start_says_what_to_set() {
+    // Live, a task failed with a bare BROWSER_UNAVAILABLE on a machine whose
+    // Chrome was not where it is looked for, and no path had been given.
+    let refusing = |said: &'static str| {
+        Fake::scripted(move |command| (command["action"] == "launch").then(|| failure(said)))
+    };
+    let refused = |fake: Fake, options: SessionOptions| async move {
+        Browser::with_scratch(Arc::new(fake), scratch("unstartable"))
+            .open_session(options)
+            .await
+            .unwrap_err()
+            .to_string()
+    };
+    let missing = refused(
+        refusing("Chrome not found. Checked:\n  - System Chrome installations"),
+        SessionOptions::default(),
+    )
+    .await;
+    assert_eq!(
+        missing,
+        "browser unavailable: no Chrome or Chromium was found on this machine; give the path of the browser to use"
+    );
+    // A binary that is no browser exits before the browser's address shows.
+    let wrong = refused(
+        refusing("Chrome exited before providing DevTools URL (no stderr output from Chrome)"),
+        SessionOptions {
+            executable: Some("/opt/tools/notes".to_owned()),
+            ..SessionOptions::default()
+        },
+    )
+    .await;
+    assert_eq!(
+        wrong,
+        "browser unavailable: the browser binary given could not be started (Chrome exited before providing DevTools URL (no stderr output from Chrome)); check that its path names Chrome or Chromium"
+    );
+    // A browser attached to is reached, not started: its words stay.
+    let attached = refused(
+        refusing("CDP connection failed: refused"),
+        SessionOptions {
+            endpoint: Some("ws://127.0.0.1:9222".to_owned()),
+            ..SessionOptions::default()
+        },
+    )
+    .await;
+    assert_eq!(
+        attached,
+        "browser unavailable: CDP connection failed: refused"
+    );
+}
+
+#[tokio::test]
 async fn sessions_are_capped_and_unknown_ones_are_named() {
     let fake = Fake::new();
     let browser = Browser::with_scratch(Arc::new(fake), scratch("cap"));

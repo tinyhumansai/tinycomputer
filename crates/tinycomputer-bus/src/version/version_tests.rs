@@ -6,7 +6,7 @@ use super::{CONTRACT_VERSION, binds, is_compatible};
 
 #[test]
 fn the_shipped_contract_version_is_pinned() {
-    assert_eq!(CONTRACT_VERSION, (2, 9));
+    assert_eq!(CONTRACT_VERSION, (2, 10));
 }
 
 #[test]
@@ -16,8 +16,12 @@ fn the_contract_binds_to_itself() {
 
 #[test]
 fn a_newer_minor_on_the_module_side_binds() {
-    assert!(is_compatible((2, 9)));
+    assert!(is_compatible((2, 10)));
     assert!(is_compatible((2, 97)));
+    // 2.10 gives `StartTask` constraints `browser_executable` and
+    // `browser_profile`, and `*` among the origins: a 2.10 host may send
+    // them, which a 2.9 module would ignore, or hand `*` to its engine.
+    assert!(!is_compatible((2, 9)));
     // 2.9 gives `RunFlow` and its result `dialog_left_open`: a 2.9 host may
     // send it, which a 2.8 module would ignore.
     assert!(!is_compatible((2, 8)));

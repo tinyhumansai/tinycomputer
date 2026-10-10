@@ -104,16 +104,7 @@ impl BrowserSurface {
     ) -> Option<DesktopResponse> {
         let id = self.ensure_session().ok()?;
         let selector = sight::selector(reference);
-        let bounds = self
-            .block(
-                self.browser
-                    .command(&id, json!({"action": "boundingbox", "selector": selector})),
-            )
-            .ok()?;
-        let middle = |start: &str, size: &str| {
-            Some(bounds.get(start)?.as_f64()? + bounds.get(size)?.as_f64()? / 2.0)
-        };
-        let (x, y) = (middle("x", "width")?, middle("y", "height")?);
+        let (x, y) = self.middle(&id, reference)?;
         // The JS side now requires an exact match against the target's own
         // shown text, so the name is passed through untruncated: cutting it
         // short would make an exact match against the page's full text
@@ -139,21 +130,7 @@ impl BrowserSurface {
         if same_card.get("result") != Some(&Value::Bool(true)) {
             return None;
         }
-        for event in ["mouseMoved", "mousePressed", "mouseReleased"] {
-            let pressed = event != "mouseMoved";
-            self.block(self.browser.command(
-                &id,
-                json!({
-                    "action": "mouse",
-                    "eventType": event,
-                    "x": x,
-                    "y": y,
-                    "button": if pressed { "left" } else { "none" },
-                    "clickCount": i32::from(pressed),
-                }),
-            ))
-            .ok()?;
-        }
+        self.press_point(&id, x, y)?;
         Some(DesktopResponse::ok(
             "click",
             json!({"clicked": selector, "through": "its own card's click layer"}),

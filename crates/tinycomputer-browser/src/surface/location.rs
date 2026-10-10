@@ -37,12 +37,13 @@ impl BrowserSurface {
     /// press stands in for that person's "Allow". Best effort: a browser
     /// that refuses is pressed as it is.
     ///
-    /// Only in a browser the module launched on a throwaway profile: the
-    /// grant covers every page of the browser for the session, and a
-    /// person's own browser (an `endpoint`) or profile (a `user_data_dir`)
-    /// keeps its own say, in the bubble they can answer.
+    /// Only in a browser the module launched, on a throwaway profile or the
+    /// one a task keeps between runs (a `user_data_dir`): the grant covers
+    /// every page of that browser while it runs, and is not written into
+    /// the profile. A person's own running browser (an `endpoint`) keeps its
+    /// own say, in the bubble they can answer.
     pub(super) fn allow_location(&self) {
-        if self.options.endpoint.is_some() || self.options.user_data_dir.is_some() {
+        if self.options.endpoint.is_some() {
             return;
         }
         let Ok(id) = self.ensure_session() else {

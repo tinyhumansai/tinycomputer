@@ -63,7 +63,9 @@ impl WorkspaceRunner {
                     self.browser.clone(),
                     self.defaults.apply(SessionOptions {
                         endpoint: constraints.browser_endpoint.clone(),
+                        executable: constraints.browser_executable.clone(),
                         headless: !constraints.headed,
+                        user_data_dir: constraints.browser_profile.clone(),
                         allowed_origins: constraints.origins.clone(),
                         ..SessionOptions::default()
                     }),

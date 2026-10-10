@@ -76,6 +76,18 @@ pub enum Error {
         url: String,
     },
 
+    /// A call's work took the session to a page its origin allowlist does
+    /// not admit (a click, a key, a script, a redirect), and the session
+    /// left it. Unlike [`Error::BlockedByPolicy`], the call ran: its effect
+    /// may stand.
+    #[error(
+        "the page reached, {url}, is not permitted by this session's allowed origins; the session left it"
+    )]
+    LeftRefusedPage {
+        /// The page that was refused, then left.
+        url: String,
+    },
+
     /// No browser could be launched or reached.
     #[error("browser unavailable: {message}")]
     BrowserUnavailable {
@@ -146,7 +158,9 @@ impl Error {
             Self::StaleRef { .. } => errors::STALE_REF,
             Self::NotActionable { .. } => errors::NOT_ACTIONABLE,
             Self::Timeout { .. } => errors::TIMEOUT,
-            Self::BlockedByPolicy { .. } => errors::BLOCKED_BY_POLICY,
+            Self::BlockedByPolicy { .. } | Self::LeftRefusedPage { .. } => {
+                errors::BLOCKED_BY_POLICY
+            }
             Self::BrowserUnavailable { .. } => errors::BROWSER_UNAVAILABLE,
             Self::PageError { .. } => errors::PAGE_ERROR,
             Self::NoSuchOutput { .. } => errors::NO_SUCH_OUTPUT,
@@ -163,9 +177,9 @@ impl Error {
     /// `details.name` for a host that matches on it. Only a failure decided
     /// before anything reaches the page is marked not delivered, so a caller
     /// knows retrying it cannot repeat an effect: an unknown session or
-    /// output (local lookups), an unresolvable ref, or a refused origin
-    /// (rejected inside agent-browser before any input is sent). Every other
-    /// failure's delivery stays unknown.
+    /// output (local lookups), an unresolvable ref, or a page the allowed
+    /// origins refused before the call was sent. Every other failure's
+    /// delivery stays unknown, a page refused after the call ran among them.
     ///
     /// # Examples
     ///
@@ -207,6 +221,9 @@ impl Error {
             Self::BlockedByPolicy { .. } => {
                 Some("do not retry; the session's allowed origins refuse this destination")
             }
+            Self::LeftRefusedPage { .. } => Some(
+                "the call ran before its page was refused and left; check what it did before repeating it",
+            ),
             Self::NoSuchOutput { .. } => {
                 Some("capture the screenshot again; held outputs expire after five minutes")
             }
@@ -224,11 +241,13 @@ impl Error {
     /// Whether this failure is always decided before anything reaches the
     /// page, so repeating the call cannot repeat an effect: a session or an
     /// output looked up locally and not found, a ref agent-browser could not
-    /// resolve, and a destination its domain filter refused — both of those
-    /// are rejected inside agent-browser before any input is sent to the page.
+    /// resolve inside itself before any input is sent to the page, and a
+    /// destination or page the session's allowed origins refused before the
+    /// call was sent.
     ///
     /// Invalid input and a limit can also come back after work was done — a
-    /// capture that turned out too large — so their delivery stays unknown.
+    /// capture that turned out too large — so their delivery stays unknown,
+    /// as does a page refused after the call ran ([`Error::LeftRefusedPage`]).
     fn refused_before_delivery(&self) -> bool {
         matches!(
             self,
@@ -269,6 +288,31 @@ impl Error {
         Self::BrowserUnavailable {
             message: message.into(),
         }
+    }
+
+    /// This failure as a browser this module launched reports it, said so a
+    /// person can act on it: one that was not found or would not start says
+    /// what to set. `named` is whether the launch was given a browser binary
+    /// to run. Any other failure stays as it is.
+    #[must_use]
+    pub(crate) fn launching(self, named: bool) -> Self {
+        let Self::BrowserUnavailable { message } = self else {
+            return self;
+        };
+        let reason = message.lines().next().unwrap_or_default().trim();
+        let message = if named {
+            format!(
+                "the browser binary given could not be started ({reason}); check that its path names Chrome or Chromium"
+            )
+        } else if reason.to_lowercase().contains("not found") {
+            "no Chrome or Chromium was found on this machine; give the path of the browser to use"
+                .to_owned()
+        } else {
+            format!(
+                "the browser could not be started ({reason}); give the path of Chrome or Chromium if it is installed elsewhere"
+            )
+        };
+        Self::BrowserUnavailable { message }
     }
 
     /// Builds an [`Error::ConnectionLost`].

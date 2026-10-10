@@ -16,6 +16,7 @@ use crate::fake::Fake;
 
 mod artifacts_tests;
 mod lifecycle_tests;
+mod origins_tests;
 mod page_tests;
 
 fn scratch(name: &str) -> PathBuf {

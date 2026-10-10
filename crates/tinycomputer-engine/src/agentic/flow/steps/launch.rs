@@ -1,7 +1,7 @@
 //! The `open` and `browse` steps: launching an application or a page and
 //! waiting for it to show a readable window.
 
-use tinycomputer_bus::{JevOperation, StepOutcome};
+use tinycomputer_bus::{DesktopResponse, JevOperation, StepOutcome};
 
 use crate::workspace::BROWSER;
 
@@ -38,10 +38,7 @@ impl<B: AgentBackend + Sync> FlowRun<'_, B> {
         } else {
             Err(Halt::Failed(format!(
                 "{app} could not be opened: {}",
-                reply
-                    .error
-                    .as_ref()
-                    .map_or("unknown error", |error| error.code.as_str())
+                failure(&reply)
             )))
         }
     }
@@ -66,10 +63,7 @@ impl<B: AgentBackend + Sync> FlowRun<'_, B> {
         if !reply.ok {
             return Err(Halt::Failed(format!(
                 "{url} could not be opened: {}",
-                reply
-                    .error
-                    .as_ref()
-                    .map_or("unknown error", |error| error.code.as_str())
+                failure(&reply)
             )));
         }
         let title = reply
@@ -112,4 +106,26 @@ impl<B: AgentBackend + Sync> FlowRun<'_, B> {
         }
         false
     }
+}
+
+/// The most characters of a failure's own words a step's note keeps.
+const FAILURE_CHARS: usize = 200;
+
+/// Why `reply` failed, for an `open` or `browse` step's note: its code, and
+/// the first line of what it says, so that a browser that could not be
+/// started says what to set (live, a bare `BROWSER_UNAVAILABLE` left a
+/// person nothing to act on).
+pub(in crate::agentic::flow) fn failure(reply: &DesktopResponse) -> String {
+    let Some(error) = reply.error.as_ref() else {
+        return "unknown error".to_owned();
+    };
+    let said = error.message.lines().next().unwrap_or_default().trim();
+    if said.is_empty() {
+        return error.code.clone();
+    }
+    let mut shown: String = said.chars().take(FAILURE_CHARS).collect();
+    if said.chars().count() > FAILURE_CHARS {
+        shown.push('…');
+    }
+    format!("{} ({shown})", error.code)
 }

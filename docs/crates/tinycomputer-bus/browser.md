@@ -66,7 +66,7 @@ field has a documented default so the common case is
 | `user_agent` | browser's own | override |
 | `user_data_dir` | a fresh temp dir, removed on close | so one session's cookies never leak into the next |
 | `download_dir` | created by the module, never removed | must be an absolute path |
-| `allowed_origins` | none (any origin) | a navigation outside the list is refused before any request is made |
+| `allowed_origins` | none (any origin) | pages only: a navigation outside the list is refused before any request is made, and a page a session is taken to outside it is left and reported; `*` admits any public host; the files a page loads are never checked |
 | `default_timeout_ms` | `30_000` | for operations that do not carry their own deadline |
 
 `SessionInfo` is what `OpenSession` and `ListSessions` report back:

@@ -67,13 +67,18 @@ covered in more depth in [Safety and privacy](../../safety-and-privacy.md).
 - `surfaces` limits the task to `desktop`, `browser`, or both, so for
   example a task that should only ever touch a website cannot reach a
   person's desktop applications even by mistake.
-- `origins` is the list of web addresses (or origin patterns) a task is
-  allowed to load at all.
+- `origins` is the list of sites (or origin patterns, or `*` for any public
+  site) a task may open pages on; the files those pages load from elsewhere
+  are not checked.
 - `allow_destructive` lets the task send, delete, or confirm things without
   pausing for approval first; it defaults to off.
 - `browser_endpoint` and `headed` control how the browser itself is run: an
   existing browser connection to reuse, or whether to show the browser
   window rather than running it invisibly.
+- The browser binary and the profile folder a task launches with
+  (`browser_executable`, `browser_profile` in the contract) are the host's
+  settings, never a model's, so the skill's schema and `Describe` leave them
+  out.
 
 ## `budget`: how much the task is allowed to do
 

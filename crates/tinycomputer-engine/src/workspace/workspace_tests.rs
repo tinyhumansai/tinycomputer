@@ -123,6 +123,10 @@ impl Surface for Recorder {
     fn back(&self, _app: &str) -> DesktopResponse {
         self.note("back")
     }
+
+    fn dismiss_cover(&self, _target: &Candidate) -> DesktopResponse {
+        self.note("dismiss_cover")
+    }
 }
 
 fn workspace(with_browser: bool) -> (Workspace<Recorder, Recorder>, Arc<Mutex<Vec<String>>>) {
@@ -247,6 +251,30 @@ fn going_back_follows_the_active_side() {
     let bare: Workspace<Recorder, Recorder> = Workspace::new(None, None);
     assert_eq!(
         bare.back("browser").error.unwrap().code,
+        "BROWSER_NOT_AVAILABLE"
+    );
+}
+
+#[test]
+fn a_cover_is_dismissed_on_the_active_side() {
+    let (workspace, calls) = workspace(true);
+    workspace.dismiss_cover(&Candidate::default());
+    workspace.navigate("https://flights.test");
+    workspace.dismiss_cover(&Candidate::default());
+    assert_eq!(
+        drain(&calls),
+        [
+            "desktop:dismiss_cover",
+            "browser:navigate",
+            "browser:dismiss_cover"
+        ]
+    );
+    let bare: Workspace<Recorder, Recorder> = Workspace::new(None, None);
+    assert_eq!(
+        bare.dismiss_cover(&Candidate::default())
+            .error
+            .unwrap()
+            .code,
         "BROWSER_NOT_AVAILABLE"
     );
 }

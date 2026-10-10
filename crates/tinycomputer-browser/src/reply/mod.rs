@@ -64,6 +64,12 @@ pub(crate) fn classify(message: &str) -> Error {
     {
         return Error::not_actionable(message);
     }
+    // A binary that never comes up as a browser (not Chrome at all, or one
+    // that dies at once) is a browser that could not be started, though its
+    // wait for the browser's address ran out.
+    if lower.contains("devtools url") || lower.starts_with("chrome launch task failed") {
+        return Error::browser_unavailable(message);
+    }
     if lower.contains("timed out") || lower.contains("timeout") {
         return Error::timeout(message, 0);
     }

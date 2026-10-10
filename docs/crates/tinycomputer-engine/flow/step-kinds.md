@@ -74,7 +74,10 @@ it is:
 - a date picker's calendar is paged forward to the requested day (in a
   browser, sight offers a calendar's days with the dates they stand for,
   and names its arrows "next month" and "previous month", even where the
-  page draws them as plain cells and glyphs);
+  page draws them as plain cells and glyphs). Paging stops once a day shows
+  the date. A calendar whose days show only a number and a fare names no
+  day's month: paging it stops once its heading, beside the arrow that pages
+  it, names the month ("October 2026"), so it is never paged past;
 - an autocomplete field has the option typed into it (the field that just
   gained focus), and the runtime picks the suggestion that then appears,
   retrying up to four times. A widget that opens without focusing any

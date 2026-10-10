@@ -83,10 +83,12 @@ this is the same rule, enforced by the same masking, one level up.
 pub struct TaskConstraints {
     pub payment: PaymentMode,
     pub surfaces: Vec<SurfaceKind>,       // empty means every available one
-    pub origins: Vec<String>,             // empty means any
+    pub origins: Vec<String>,             // pages only; `*` any public site; empty means any
     pub allow_destructive: bool,
     pub browser_endpoint: Option<String>, // attach to the caller's own Chrome
     pub headed: bool,
+    pub browser_executable: Option<String>, // the binary to launch (2.10)
+    pub browser_profile: Option<String>,    // an absolute profile folder kept between tasks (2.10)
 }
 ```
 

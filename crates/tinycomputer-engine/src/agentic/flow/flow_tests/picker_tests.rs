@@ -1,7 +1,7 @@
 //! Pop-ups and calendars a step works with: a closer that goes with its
 //! pop-up (a "Close" or a consent bar's "Accept all"), a calendar the task picked in closed for a press behind it, in
-//! its own step or a later one, and a date picked from a calendar already
-//! open.
+//! its own step or a later one, a date picked from a calendar already
+//! open, and a calendar paged no further than the heading of its month.
 
 use super::*;
 
@@ -228,4 +228,191 @@ async fn a_date_whose_calendar_is_open_is_picked_without_pressing_its_button() {
     let sim = run.app.sim();
     assert_eq!(sim.clicks, ["12 September 2026"]);
     assert_eq!(sim.fields["Departure"], "12 September 2026");
+}
+
+#[test]
+fn a_calendars_heading_names_the_month_it_shows() {
+    use super::steps::heads_month_of;
+    let date = "23 October 2026";
+    assert!(heads_month_of("October 2026", date));
+    assert!(heads_month_of("Oct 2026", date));
+    // One heading over two months, as a two-month picker draws it.
+    assert!(heads_month_of(
+        "September 2026 Mo Tu We Th Fr Sa Su October 2026 Mo Tu We Th Fr Sa Su",
+        date
+    ));
+    assert!(!heads_month_of("November 2026", date));
+    assert!(
+        !heads_month_of("October 2027", date),
+        "another year's October"
+    );
+    assert!(
+        heads_month_of("October 2027", "23 October"),
+        "a date with no year is in the first October shown"
+    );
+    assert!(!heads_month_of("October", date), "a month with no year");
+    assert!(
+        !heads_month_of("Check-in 18 Oct 2026 Sunday", date),
+        "a field's date is no heading"
+    );
+    assert!(
+        !heads_month_of("Next month, October 2026", date),
+        "an arrow names the month it turns to"
+    );
+    assert!(
+        !heads_month_of("Lowest fares in October 2026", date),
+        "a sentence is no heading"
+    );
+    assert!(
+        heads_month_of("« October 2026 »", date),
+        "arrows' glyphs aside"
+    );
+}
+
+#[test]
+fn only_a_heading_beside_the_calendars_arrow_names_its_month() {
+    use super::steps::heads_its_month;
+    let placed = |name: &str, role: &str, order: usize| Candidate {
+        order,
+        ..node(name, role, &["Click"], &["main"], 0.0)
+    };
+    let next = placed("Next Month", "button", 40);
+    // A week of days that show a number and a fare, no month.
+    let bare_days = (1..=7_u8)
+        .map(|day| {
+            placed(
+                &format!("{day} 6,0{day}5"),
+                "gridcell",
+                50 + usize::from(day),
+            )
+        })
+        .collect::<Vec<_>>();
+    let screen = |candidates: Vec<Candidate>, text_nodes: Vec<Candidate>| Screen {
+        app: "browser".to_owned(),
+        window: None,
+        surface: "window".to_owned(),
+        candidates: candidates
+            .into_iter()
+            .chain([next.clone()])
+            .chain(bare_days.clone())
+            .collect(),
+        context: Vec::new(),
+        unexplored: Vec::new(),
+        text_nodes,
+    };
+    let date = "23 October 2026";
+    assert!(heads_its_month(
+        &screen(Vec::new(), vec![placed("October 2026", "text", 41)]),
+        &next,
+        date
+    ));
+    // A caption drawn as a button before the arrows.
+    assert!(heads_its_month(
+        &screen(
+            vec![placed("October 2026 Mo Tu We Th Fr Sa Su", "button", 39)],
+            Vec::new()
+        ),
+        &next,
+        date
+    ));
+    // Months to fly in, listed elsewhere on the page, say nothing of the
+    // month the calendar shows, nor does a month menu's choice beside it.
+    assert!(!heads_its_month(
+        &screen(vec![placed("October 2026", "button", 3)], Vec::new()),
+        &next,
+        date
+    ));
+    assert!(!heads_its_month(
+        &screen(vec![placed("October 2026", "option", 41)], Vec::new()),
+        &next,
+        date
+    ));
+    // A results list's page numbers, far from the arrow, are no calendar's
+    // days.
+    let paged = Screen {
+        candidates: (1..=7_u8)
+            .map(|day| placed(&day.to_string(), "button", 400 + usize::from(day)))
+            .chain([next.clone()])
+            .collect(),
+        text_nodes: vec![placed("October 2026", "text", 41)],
+        ..screen(Vec::new(), Vec::new())
+    };
+    assert!(!heads_its_month(&paged, &next, date));
+    // A calendar whose days name their month is paged by them alone.
+    let dated = Screen {
+        candidates: (1..=7_u8)
+            .map(|day| placed(&format!("{day} September 2026"), "gridcell", 50))
+            .chain([next.clone()])
+            .collect(),
+        text_nodes: vec![placed("October 2026", "text", 41)],
+        ..screen(Vec::new(), Vec::new())
+    };
+    assert!(!heads_its_month(&dated, &next, date));
+}
+
+#[tokio::test]
+async fn a_calendar_whose_days_name_no_month_is_paged_no_further_than_its_heading() {
+    // Live, a hotel site's open days showed a number and a fare: no day
+    // read as the date, and its calendar was paged a year past October.
+    let run = run_with(
+        App::with(|sim| {
+            sim.booking = Some(Booking {
+                calendar: Some(8),
+                ..Booking::default()
+            });
+            sim.quirks.insert(Quirk::BareCalendarDays);
+        }),
+        json!({"app": "Mail", "steps": [{"enter": {"departure date": "18 October 2026"}}]}),
+        |request| request.disabled_loops.push(FlowLoop::Attention),
+        |id, question, sim| match id {
+            "move" => Some(pick(question, "activate", 0.9)),
+            "done" => Some(noul(
+                if sim
+                    .booking
+                    .as_ref()
+                    .is_some_and(|booking| booking.calendar.is_some())
+                {
+                    0.9
+                } else {
+                    0.05
+                },
+            )),
+            _ => None,
+        },
+    )
+    .await;
+    let sim = run.app.sim();
+    // Replayed: the departure box opens the calendar on September, and
+    // each "Next Month" turns it a month on.
+    let furthest = sim
+        .clicks
+        .iter()
+        .fold((8, 8), |(month, furthest), click| {
+            let month = match click.as_str() {
+                "Departure" => 8,
+                "Next Month" => month + 1,
+                _ => month,
+            };
+            (month, furthest.max(month))
+        })
+        .1;
+    assert_eq!(
+        furthest, 9,
+        "paged to October and never past it: {:?}",
+        sim.clicks
+    );
+    assert_eq!(
+        sim.booking.as_ref().and_then(|booking| booking.calendar),
+        Some(9),
+        "the calendar shows October"
+    );
+    // A day that names no month is never pressed on its number alone: the
+    // step ends there, its date unpicked, rather than guessing at a day.
+    assert_eq!(
+        run.result.stop,
+        FlowStopReason::StepFailed,
+        "{:?}",
+        run.result.steps
+    );
+    assert!(!sim.fields.contains_key("Departure"), "{:?}", sim.fields);
 }

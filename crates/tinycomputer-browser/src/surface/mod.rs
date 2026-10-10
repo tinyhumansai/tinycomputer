@@ -12,6 +12,7 @@
 //! the actions are the same with or without it.
 
 mod card;
+mod cover;
 mod cursor;
 mod envelope;
 mod fields;
@@ -25,7 +26,9 @@ mod uncover;
 mod watch;
 
 #[cfg(test)]
-pub(crate) use uncover::INTO_VIEW_JS;
+pub(crate) use cover::{COVER_JS, SPOT_GRID};
+#[cfg(test)]
+pub(crate) use uncover::{CENTRE_JS, INTO_VIEW_JS};
 
 pub use sight::Denoised;
 

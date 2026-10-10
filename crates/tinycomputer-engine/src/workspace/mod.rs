@@ -309,6 +309,14 @@ impl<D: Surface + Sync, W: Surface + Sync> Surface for Workspace<D, W> {
             (None, None) => no_browser("back"),
         }
     }
+
+    fn dismiss_cover(&self, target: &Candidate) -> DesktopResponse {
+        match (self.active_browser(), &self.desktop) {
+            (Some(browser), _) => browser.dismiss_cover(target),
+            (None, Some(desktop)) => desktop.dismiss_cover(target),
+            (None, None) => no_browser("dismiss-cover"),
+        }
+    }
 }
 
 #[cfg(test)]

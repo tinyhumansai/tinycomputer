@@ -158,8 +158,42 @@ pub(super) fn press_booking(sim: &mut Sim, name: &str) {
             }
             sim.fields.insert("Departure".to_owned(), day.to_owned());
         }
+        day if booking.calendar.is_some() && bare_day(day).is_some() => {
+            let month = MONTH_NAMES[booking.calendar.unwrap_or_default()];
+            if !stays_open {
+                booking.calendar = None;
+            }
+            let date = format!("{} {month} 2026", bare_day(day).unwrap_or_default());
+            sim.fields.insert("Departure".to_owned(), date);
+        }
         _ => {}
     }
+}
+
+/// The day a bare calendar cell (`"18 6,018"`: its number and a fare)
+/// stands for, under [`Quirk::BareCalendarDays`].
+fn bare_day(name: &str) -> Option<u8> {
+    let (day, fare) = name.split_once(' ')?;
+    fare.contains(',').then(|| day.parse().ok()).flatten()
+}
+
+/// The open calendar's heading as the text it is, beside the booking form's
+/// controls, under [`Quirk::BareCalendarDays`].
+pub(super) fn heading_node(sim: &Sim, root: &str) -> Option<Candidate> {
+    calendar_heading(sim).map(|heading| Candidate {
+        role: "text".to_owned(),
+        name: Some(heading),
+        path: vec![root.to_owned(), "group \"Booking\"".to_owned()],
+        ..Candidate::default()
+    })
+}
+
+/// The open calendar's heading under [`Quirk::BareCalendarDays`], the only
+/// place its month shows: `"October 2026"`.
+pub(super) fn calendar_heading(sim: &Sim) -> Option<String> {
+    let month = sim.booking.as_ref()?.calendar?;
+    sim.has(Quirk::BareCalendarDays)
+        .then(|| format!("{} 2026", MONTH_NAMES[month]))
 }
 
 /// Emirates' passengers box: a button that does not show its count, and
@@ -270,22 +304,28 @@ pub(super) fn booking_widget(
         candidates.push(find);
     }
     if let Some(month) = booking.calendar {
+        let bare = sim.has(Quirk::BareCalendarDays);
+        let days = (1..=28)
+            .map(|day| {
+                if bare {
+                    format!("{day} 6,{day:03}")
+                } else {
+                    format!("{day} {} 2026", MONTH_NAMES[month])
+                }
+            })
+            .collect::<Vec<_>>();
         // The date field's own label lists the whole open calendar.
-        let listing = (1..=28)
-            .map(|day| format!("{day} {} 2026", MONTH_NAMES[month]))
-            .collect::<Vec<_>>()
-            .join(" ");
         candidates.push(node(
-            &format!("departureDate Previous Month Next Month {listing}"),
+            &format!("departureDate Previous Month Next Month {}", days.join(" ")),
             "button",
             &["Click"],
             &widget,
             125.0,
         ));
         candidates.push(node("Next Month", "button", &["Click"], &widget, 130.0));
-        for day in 1..=28 {
-            let name = format!("{day} {} 2026", MONTH_NAMES[month]);
-            candidates.push(node(&name, "button", &["Click"], &widget, 140.0));
+        let role = if bare { "gridcell" } else { "button" };
+        for name in &days {
+            candidates.push(node(name, role, &["Click"], &widget, 140.0));
         }
     }
 }
@@ -431,9 +471,33 @@ pub(super) fn result_cards(
     text_nodes
 }
 
-/// What lies over the simulated page: a promo toast, or something that
-/// covers the New Message button.
+/// What lies over the simulated page: a promo toast, something that covers
+/// the New Message button (a backdrop over the page, with the header a
+/// refused press scrolled in under it, or a control of the page's own).
 pub(super) fn overlays(sim: &Sim, root: &str, candidates: &mut Vec<Candidate>) {
+    if [
+        Quirk::Backdrop,
+        Quirk::ControlOver,
+        Quirk::StubbornBackdrop,
+        Quirk::FleetingBackdrop,
+    ]
+    .into_iter()
+    .any(|quirk| sim.has(quirk))
+    {
+        for candidate in candidates.iter_mut() {
+            if candidate.name.as_deref() == Some("New Message") {
+                candidate.states = vec!["covered".to_owned()];
+            }
+        }
+    }
+    if sim.has(Quirk::HeaderUnderBackdrop) {
+        let header = [root, "banner"];
+        for (name, y) in [("Basket", 10.0), ("Sign in", 20.0), ("Help", 30.0)] {
+            let mut control = node(name, "button", &["Click"], &header, y);
+            control.states = vec!["covered".to_owned()];
+            candidates.push(control);
+        }
+    }
     if sim.has(Quirk::Covered) {
         for candidate in candidates.iter_mut() {
             if candidate.name.as_deref() == Some("New Message") {

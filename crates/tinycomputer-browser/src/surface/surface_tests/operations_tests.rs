@@ -363,6 +363,26 @@ fn location_is_granted_only_in_a_browser_the_module_launched() {
         .surface
         .execute(JevOperation::Click, Some(location.clone()), None);
     assert!(granted(&own));
+    // A task's own profile, kept between its runs, is still a browser the
+    // module launched: headless, no one could answer the bubble.
+    let kept = shown_harness(
+        "location-kept-profile",
+        page_fake(),
+        SessionOptions {
+            user_data_dir: Some(
+                std::env::temp_dir()
+                    .join("tinycomputer-location-profile")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+            ..SessionOptions::default()
+        },
+        &Drawn::default(),
+    );
+    let _pressed = kept
+        .surface
+        .execute(JevOperation::Click, Some(location.clone()), None);
+    assert!(granted(&kept), "{:?}", kept.fake.sent());
     let attached = shown_harness(
         "location-attached",
         page_fake(),

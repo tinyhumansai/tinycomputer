@@ -178,15 +178,8 @@ impl Tasks {
                 ));
             }
         }
-        if request.constraints.payment == PaymentMode::FillThenApprove
-            && request.constraints.origins.is_empty()
-        {
-            return AgentResponse::err(AgentError::new(
-                "ORIGINS_REQUIRED",
-                "filling a payment form needs the sites card details may be typed on",
-                "list them in constraints.origins, or leave payment at stop_at_payment",
-                true,
-            ));
+        if let Some(refusal) = constraints_refusal(&request.constraints) {
+            return AgentResponse::err(refusal);
         }
         let Some(flow) = request.flow.clone() else {
             if let (Some(task), Some(planner)) = (&request.task, &self.planner) {
@@ -375,4 +368,72 @@ impl Tasks {
                 .collect(),
         )
     }
+}
+
+/// Why a task's constraints cannot start it, if they cannot: a payment form
+/// filled with no named site to type card details on (`*` names none), a
+/// relative profile folder, which would land wherever the module's host
+/// happens to run, a browser binary that is no absolute path to an
+/// executable file on this machine (a bare name would be looked up on the
+/// `PATH`), or either
+/// beside a browser to attach to, which launches nothing. Paths are taken
+/// as given: one with a space around it names another folder or file.
+fn constraints_refusal(
+    constraints: &tinycomputer_bus::agent::TaskConstraints,
+) -> Option<AgentError> {
+    if constraints.payment == PaymentMode::FillThenApprove
+        && (constraints.origins.is_empty()
+            || constraints
+                .origins
+                .iter()
+                .any(|origin| origin.trim() == "*"))
+    {
+        return Some(AgentError::new(
+            "ORIGINS_REQUIRED",
+            "filling a payment form needs the sites card details may be typed on, and `*` names none",
+            "list them in constraints.origins, or leave payment at stop_at_payment",
+            true,
+        ));
+    }
+    let launched =
+        constraints.browser_profile.is_some() || constraints.browser_executable.is_some();
+    let browser = if launched && constraints.browser_endpoint.is_some() {
+        "browser_profile and browser_executable choose a browser to launch, and browser_endpoint attaches to one already running"
+    } else if constraints
+        .browser_profile
+        .as_deref()
+        .is_some_and(|folder| !std::path::Path::new(folder).is_absolute())
+    {
+        "browser_profile must be an absolute folder"
+    } else if constraints
+        .browser_executable
+        .as_deref()
+        .is_some_and(|binary| {
+            let binary = std::path::Path::new(binary);
+            !binary.is_absolute() || !launchable(binary)
+        })
+    {
+        "browser_executable must be the absolute path of a browser binary on this machine"
+    } else {
+        return None;
+    };
+    Some(AgentError::new(
+        "INVALID_REQUEST",
+        browser,
+        "give constraints.browser_profile as an absolute folder and browser_executable as the absolute path of a browser binary, or leave them out; neither goes with browser_endpoint",
+        true,
+    ))
+}
+
+/// Whether `binary` is a file this machine would run: one marked executable
+/// where files carry that mark.
+fn launchable(binary: &std::path::Path) -> bool {
+    let Ok(metadata) = binary.metadata() else {
+        return false;
+    };
+    #[cfg(unix)]
+    let runs = std::os::unix::fs::PermissionsExt::mode(&metadata.permissions()) & 0o111 != 0;
+    #[cfg(not(unix))]
+    let runs = true;
+    metadata.is_file() && runs
 }

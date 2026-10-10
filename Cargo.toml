@@ -101,6 +101,10 @@ getrandom = "0.4"
 # versions agent-browser takes, so the lockfile holds one copy of each.
 base64 = "0.22"
 sha2 = "0.10"
+# A browser session reads a page's address by the WHATWG URL rules Chrome
+# reads it by, so an address written another way is judged as the page it
+# opens. The version agent-browser takes, so the lockfile holds one copy.
+url = "2"
 # Module integration tests exercise the real asynchronous in-memory TinyBus.
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
 

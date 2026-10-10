@@ -356,3 +356,57 @@ async fn the_runner_loads_the_page_a_browser_task_names_in_its_early_browser() {
     runner.release(&task);
     let _ = std::fs::remove_dir_all(&scratch);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_task_browser_launches_with_its_own_binary_and_profile_and_checks_pages_itself() {
+    use tinycomputer_bus::agent::{SurfaceKind, TaskConstraints, TaskId};
+    use tinycomputer_engine::FlowRunner;
+
+    let scratch =
+        std::env::temp_dir().join(format!("tinycomputer-runner-launch-{}", std::process::id()));
+    let sent = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let browser = std::sync::Arc::new(tinycomputer_browser::Browser::with_scratch(
+        std::sync::Arc::new(super::browser_tests::ScriptedLauncher(sent.clone())),
+        scratch.clone(),
+    ));
+    let runner =
+        crate::tinybus_module::runner::WorkspaceRunner::new(crate::Desktop::new(), None, browser);
+    let task = TaskId::new("t-1");
+    runner
+        .prepare(
+            &task,
+            &TaskConstraints {
+                surfaces: vec![SurfaceKind::Browser],
+                origins: vec!["https://.example.com".to_owned()],
+                browser_executable: Some("/opt/chrome/chrome".to_owned()),
+                browser_profile: Some("/Users/asha/.openhuman/chrome".to_owned()),
+                ..TaskConstraints::default()
+            },
+        )
+        .await;
+    runner.open_page(&task, "https://www.example.com/").await;
+    runner.open_page(&task, "https://evil.test/").await;
+    let sent = sent.lock().unwrap().clone();
+    let launch = sent
+        .iter()
+        .find(|command| command["action"] == "launch")
+        .expect("the early browser launched");
+    assert_eq!(launch["executablePath"], "/opt/chrome/chrome");
+    assert_eq!(launch["profile"], "/Users/asha/.openhuman/chrome");
+    assert!(
+        launch.get("allowedDomains").is_none(),
+        "the engine would refuse the page's own files, and the profile: {launch}"
+    );
+    let navigated = sent
+        .iter()
+        .filter(|command| command["action"] == "navigate")
+        .map(|command| command["url"].clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        navigated,
+        [json!("https://www.example.com/")],
+        "a page outside the origins is refused before the browser is asked"
+    );
+    runner.release(&task);
+    let _ = std::fs::remove_dir_all(&scratch);
+}

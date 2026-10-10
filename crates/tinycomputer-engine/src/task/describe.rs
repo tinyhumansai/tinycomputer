@@ -3,9 +3,10 @@
 //! worked requests to adapt, and a catalogue of every other member.
 //!
 //! The schemas here are written by hand, so each field of a request type
-//! must be added here when it is added to the contract;
+//! must be added here when it is added to the contract, save the host's
+//! own settings no model is offered (a task's browser binary and profile);
 //! `task_tests/describe_tests.rs` checks the `StartTask` and `PlanTask`
-//! schemas name every field their types serialize.
+//! schemas name every other field their types serialize.
 
 use serde_json::{Value, json};
 use tinycomputer_bus::agent::names::{CONFIDENTIAL, methods};
@@ -61,7 +62,9 @@ fn task_id() -> Value {
     }})
 }
 
-/// `StartTask`'s input schema: every field of `StartTaskRequest`.
+/// `StartTask`'s input schema: every field of `StartTaskRequest` a model may
+/// set. `browser_executable` and `browser_profile` are the host's to set
+/// from its own settings, so they are not offered.
 fn start_task_input() -> Value {
     let object = |properties: Value, required: &[&str]| json!({"type": "object", "required": required, "properties": properties});
     object(
@@ -81,10 +84,15 @@ fn start_task_input() -> Value {
             "constraints": {"type": "object", "properties": {
                 "payment": {
                     "enum": ["stop_at_payment", "fill_then_approve"],
-                    "default": "stop_at_payment"
+                    "default": "stop_at_payment",
+                    "description": "fill_then_approve needs origins that name the sites card details may be typed on, never *"
                 },
                 "surfaces": surfaces(),
-                "origins": {"type": "array", "items": {"type": "string"}},
+                "origins": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "sites the browser may open pages on: https://example.com, https://.example.com with its subdomains, or * for any public site; only pages are checked, never the files a page loads"
+                },
                 "allow_destructive": {"type": "boolean"},
                 "browser_endpoint": {"type": "string"},
                 "headed": {"type": "boolean"}

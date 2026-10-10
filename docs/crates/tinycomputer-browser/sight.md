@@ -139,7 +139,9 @@ read from the last segment of its `href`.
 A page label that says *more* than the control's own words becomes a
 description rather than replacing the name: a calendar day drawn as just
 "18" whose inner element carries `aria-label="Sunday, 18 October 2026"`
-keeps the short name and gets that as its description.
+keeps the short name and gets that as its description. A day that shows a
+fare after its number ("23 6757") gets its inner label the same way, when
+that label names a month and the day's number ("October 23, 2026").
 
 ## One control per thing a person sees
 

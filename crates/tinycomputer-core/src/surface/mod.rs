@@ -123,6 +123,26 @@ pub trait Surface: Clone + Send + 'static {
             ),
         )
     }
+
+    /// Closes an empty layer lying over `target`, the backdrop a popup, a
+    /// menu, or a box's list of suggestions leaves over a page, by pressing
+    /// it where nothing pressable lies beneath, as a person clicks outside
+    /// a popup to close it. The reply names what it pressed as `dismissed`,
+    /// or `null` when nothing covers `target` any more.
+    ///
+    /// Only an empty layer is ever pressed: never a control, text, a
+    /// picture, or a dialog. A surface that cannot tell what lies over an
+    /// element, as a desktop application's cannot, refuses with
+    /// `ACTION_NOT_SUPPORTED`.
+    fn dismiss_cover(&self, _target: &Candidate) -> DesktopResponse {
+        DesktopResponse::err(
+            "dismiss-cover",
+            tinycomputer_bus::DesktopError::new(
+                "ACTION_NOT_SUPPORTED",
+                "this surface cannot tell what lies over an element",
+            ),
+        )
+    }
 }
 
 /// Whether a person would carry out `operation` with the pointer — click,

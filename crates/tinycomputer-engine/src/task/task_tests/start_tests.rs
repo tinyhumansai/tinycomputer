@@ -216,6 +216,126 @@ async fn a_value_supplied_for_a_missing_fact_still_fails_fast_if_it_leaks() {
 }
 
 #[tokio::test]
+async fn constraints_that_cannot_start_a_task_are_refused() {
+    let (tasks, _) = controller(Vec::new());
+    // `*` names no site card details may be typed on, alone or beside one
+    // that does: with it, every public site is admitted.
+    for origins in [vec!["*"], vec!["https://.pay.test", "*"]] {
+        let any_site = tasks.start(&StartTaskRequest {
+            flow: Some(flow(json!({"app": "Mail", "steps": ["x"]}))),
+            constraints: TaskConstraints {
+                payment: PaymentMode::FillThenApprove,
+                origins: origins.iter().map(|origin| (*origin).to_owned()).collect(),
+                ..TaskConstraints::default()
+            },
+            ..StartTaskRequest::default()
+        });
+        assert_eq!(code(&any_site), "ORIGINS_REQUIRED", "{origins:?}");
+    }
+    let relative_profile = tasks.start(&StartTaskRequest {
+        flow: Some(flow(json!({"app": "Mail", "steps": ["x"]}))),
+        constraints: TaskConstraints {
+            browser_profile: Some("chrome-profile".to_owned()),
+            ..TaskConstraints::default()
+        },
+        ..StartTaskRequest::default()
+    });
+    assert_eq!(code(&relative_profile), "INVALID_REQUEST");
+    assert!(
+        relative_profile
+            .error
+            .unwrap()
+            .message
+            .contains("absolute folder")
+    );
+}
+
+#[tokio::test]
+async fn a_task_browser_starts_only_with_a_binary_and_profile_it_can_launch() {
+    let (tasks, _) = controller(Vec::new());
+    let refused = |constraints: TaskConstraints| {
+        tasks.start(&StartTaskRequest {
+            flow: Some(flow(json!({"app": "Mail", "steps": ["x"]}))),
+            constraints,
+            ..StartTaskRequest::default()
+        })
+    };
+    // A binary is the absolute path of an executable file on this machine:
+    // never a name looked up on the `PATH`, a folder, a file that is not
+    // there or would not run, or a path with a space before it (a
+    // different, relative path). Which browser it is stays the host's
+    // choice, so any such file will do.
+    let here = std::env::current_exe()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let profile = std::env::temp_dir()
+        .join("tinycomputer-profile")
+        .to_string_lossy()
+        .into_owned();
+    // A file that is there but would not run (no executable mark).
+    let plain =
+        std::env::temp_dir().join(format!("tinycomputer-not-a-binary-{}", std::process::id()));
+    std::fs::write(&plain, "not a browser").unwrap();
+    let mut binaries = vec![
+        "  ".to_owned(),
+        "chrome".to_owned(),
+        std::env::temp_dir().to_string_lossy().into_owned(),
+        "/nonexistent/tinycomputer/chrome".to_owned(),
+        format!(" {here}"),
+    ];
+    if cfg!(unix) {
+        binaries.push(plain.to_string_lossy().into_owned());
+    }
+    for binary in binaries {
+        let reply = refused(TaskConstraints {
+            browser_executable: Some(binary.clone()),
+            ..TaskConstraints::default()
+        });
+        assert_eq!(code(&reply), "INVALID_REQUEST", "{binary:?}");
+    }
+    assert_eq!(
+        code(&refused(TaskConstraints {
+            browser_profile: Some(format!(" {profile}")),
+            ..TaskConstraints::default()
+        })),
+        "INVALID_REQUEST",
+        "a space before the folder makes it relative"
+    );
+    // A browser attached to is not launched: no binary or profile goes with it.
+    for constraints in [
+        TaskConstraints {
+            browser_endpoint: Some("ws://127.0.0.1:9222".to_owned()),
+            browser_profile: Some(profile.clone()),
+            ..TaskConstraints::default()
+        },
+        TaskConstraints {
+            browser_endpoint: Some("ws://127.0.0.1:9222".to_owned()),
+            browser_executable: Some(here.clone()),
+            ..TaskConstraints::default()
+        },
+    ] {
+        let reply = refused(constraints);
+        assert_eq!(code(&reply), "INVALID_REQUEST");
+        assert!(
+            reply
+                .error
+                .unwrap()
+                .message
+                .contains("browser_endpoint attaches")
+        );
+    }
+    // A binary that is there, and an absolute folder, start the task.
+    let started = refused(TaskConstraints {
+        browser_executable: Some(here),
+        browser_profile: Some(profile),
+        ..TaskConstraints::default()
+    });
+    assert!(started.ok, "{:?}", started.error);
+    let _ = std::fs::remove_file(&plain);
+}
+
+#[tokio::test]
 async fn requests_that_cannot_start_are_refused_with_a_hint() {
     let (tasks, _) = controller(Vec::new());
     let misspelt = tasks.start(&StartTaskRequest {

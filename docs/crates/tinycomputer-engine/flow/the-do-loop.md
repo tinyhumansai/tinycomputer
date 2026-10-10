@@ -101,9 +101,10 @@ covered control behind it is not offered as a move (one its own bar covers
 inside it is), and its close control is offered only to a step that asks
 to close something. A step that then presses inside it has served it: at
 the next step it is an ordinary overlay again, so a calendar left open
-after its day is cleared out of the way. A scroll or the run's own
-housekeeping (a distraction cleared, a dismissal, an undo) opens no
-dialog of the task's, and opening an address forgets it. On a browser task,
+after its day is cleared out of the way. A scroll, the run's own
+housekeeping (a distraction cleared, a dismissal, an undo), or a press the
+page refused (`NOT_ACTIONABLE`, which never reached it) opens no dialog of
+the task's and answers none, and opening an address forgets it. On a browser task,
 when nothing serves the step while such a dialog is in front, grounding
 asks once which of the dialog's own controls answers it the way the task
 wants (a format a booking button asks for before its dates), never one
@@ -186,11 +187,20 @@ browser, a result card sometimes lays a click layer, or its own text, over
 its own link, and in that specific case the browser surface clicks through
 at the link's position, but only when the exact target sits in the same
 card as the cover and no dialog is involved. Anything else that comes back
-covered gets Escape pressed once, then the runtime retries the very same
-already-vetted target, whether that is a `do` step's click or a `pick`'s
-click. Escape never chooses a new element: nothing that dismissing the
-cover exposes gets pressed without going through grounding and the
-destructive check again, on a later turn.
+covered gets a layer's own closer or Escape pressed once, then the runtime
+looks again and retries the very same already-vetted target, whether that
+is a `do` step's click or a `pick`'s click. When the browser says what
+still covers it is an empty layer (the backdrop a popup or a box's list of
+suggestions leaves over a page), that layer is pressed once where nothing
+pressable lies beneath it (`Surface::dismiss_cover`, as a person clicks
+outside a popup), and the target is retried once more. None of these
+chooses a new element: nothing that dismissing the cover exposes gets
+pressed without going through grounding and the destructive check again,
+on a later turn. The history names the cover as the browser says it
+(`button "Select Location"`, `an empty layer`), and a press still refused
+ends the step's failure note with "its press of … was refused because …
+lies over it", so a rescue deals with the cover rather than redo the steps
+before it.
 
 ### Ending a dismissal cleanly
 

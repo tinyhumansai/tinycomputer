@@ -298,6 +298,61 @@ async fn walls_budgets_and_run_errors_are_never_rescued() {
 }
 
 #[tokio::test]
+async fn a_browser_that_cannot_start_is_never_rescued_and_says_what_to_set() {
+    // Live, four rescues of a bare BROWSER_UNAVAILABLE spent minutes before
+    // the rescuer gave up: no step a rescue writes starts a browser.
+    let opened = |ok: bool, note: &str| tinycomputer_bus::FlowActionRecord {
+        action: "browse https://flights.test".to_owned(),
+        target: None,
+        ok,
+        note: note.to_owned(),
+    };
+    let unstartable = |action| {
+        let mut failed = step(
+            "1",
+            "browse",
+            "https://flights.test",
+            StepOutcome::Failed,
+            "https://flights.test could not be opened: BROWSER_UNAVAILABLE (browser unavailable: no Chrome or Chromium was found on this machine; give the path of the browser to use)",
+        );
+        failed.actions = vec![action];
+        finished_run(FlowStopReason::StepFailed, vec![failed], &[], None)
+    };
+    let (tasks, script, model) = rescued(
+        vec![unstartable(opened(false, "BROWSER_UNAVAILABLE"))],
+        &[Ok(ONE_STEP)],
+    );
+    let view = begin(&tasks, TaskBudget::default());
+    let TaskStatus::Failed {
+        step,
+        reason,
+        hint,
+        recoverable,
+    } = settle(&tasks, &view.id).await.status
+    else {
+        panic!("a browser that cannot start fails the task");
+    };
+    assert_eq!(step, Some(0));
+    assert!(
+        reason.contains("no Chrome or Chromium was found"),
+        "{reason}"
+    );
+    assert!(hint.contains("browser_executable"), "{hint}");
+    assert!(!recoverable, "nothing a retry can change");
+    assert!(model.seen.lock().unwrap().is_empty(), "no rescue was asked");
+    assert_eq!(script.requests.lock().unwrap().len(), 1);
+
+    // Any other failure of the same step is still rescued.
+    let (tasks, _, model) = rescued(
+        vec![unstartable(opened(false, "TIMEOUT"))],
+        &[Err("the model is down")],
+    );
+    let view = begin(&tasks, TaskBudget::default());
+    settle(&tasks, &view.id).await;
+    assert_eq!(model.seen.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn steps_the_guidance_covers_are_dropped_and_the_guard_is_kept() {
     let covering = r#"{"action": "retry", "reason": "the search opens the cheapest result itself",
       "steps": ["press Search Flights"], "covers": 1}"#;

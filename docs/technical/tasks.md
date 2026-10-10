@@ -141,7 +141,11 @@ share that workspace, so a resumed task picks up on the page the last run left.
   "Sign up" links are not one), the status becomes
   `needs_human` and `ContinueTask` reruns the failed step and the rest once
   the person has got past it. If not, and a rescuer is configured, the failure
-  is rescued (below). Otherwise it stays `failed`.
+  is rescued (below). Otherwise it stays `failed`. A step that failed because
+  no browser could be started (`BROWSER_UNAVAILABLE`) is never rescued: the
+  task fails at once, not recoverable, with a hint to give the path of Chrome
+  or Chromium. An `open` or `browse` step's failure note keeps the first line
+  of the failure's own words after its code.
 - **A budget ran out, or the flow was invalid.** `failed`, with a hint such as
   "raise budget.max_actions".
 
@@ -171,9 +175,16 @@ spent waiting for the caller does not count.
 - `surfaces`: `browser`, `desktop`, or both (empty means both). A task confined
   to one side gets a workspace without the other, so it cannot reach it even by
   mistake.
-- `origins`: the sites a browser session may load, such as
-  `https://.goindigo.in` for a site and its subdomains. agent-browser's domain
-  filter enforces it. It is a guard rail, not a sandbox.
+- `origins`: the sites a browser session may open pages on, such as
+  `https://.goindigo.in` for a site and its subdomains, or `*` for any public
+  site (private and local addresses and names stay refused; a name is never
+  resolved, so a public name that leads to a local address is admitted). The
+  session checks pages itself: a navigation outside the list is refused
+  before it is sent, nothing is done on a page outside it, and a page a
+  click or redirect lands on outside it is left before it is read. The
+  files a page loads from other hosts are not checked; agent-browser's domain
+  filter is not used, as it refuses those files too and breaks the page. It
+  is a guard rail, not a sandbox. `fill_then_approve` refuses `*`.
 - `payment`: `stop_at_payment` (the default) makes the control that pays a
   final checkpoint; `fill_then_approve` fills the payment form from secret
   facts and waits at `needs_approval` before pressing it. The latter needs
@@ -186,6 +197,20 @@ spent waiting for the caller does not count.
   browser but serve a person's own. Closing an attached session only
   disconnects; it never closes the person's browser.
 - `headed`: show the browser.
+- `browser_executable`: the absolute path of the Chrome or Chromium binary to
+  launch, in place of the module's configured `browser.executable`
+  (`INVALID_REQUEST` for a bare name, a relative path, or no executable file
+  there).
+- `browser_profile`: an absolute folder to keep the browser's profile in, so
+  sign-ins last between tasks (`INVALID_REQUEST` for a relative folder). One
+  browser can hold a folder at a time: cancel a task still holding the folder
+  before starting another on it, or the new task fails as its browser starts.
+  A task's own profile is a browser the module launched, so a press of a
+  page's "use my current location" grants it the location while it runs.
+- `browser_executable` and `browser_profile` are the host's settings: a host
+  that relays a model's request never takes them from the model, and neither
+  `Describe` nor the skill offers them to one. Neither goes with
+  `browser_endpoint` (`INVALID_REQUEST`), which launches nothing.
 
 ## Private values
 

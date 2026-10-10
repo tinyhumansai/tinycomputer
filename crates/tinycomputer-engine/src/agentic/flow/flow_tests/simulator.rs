@@ -65,6 +65,30 @@ pub(super) enum Quirk {
     /// The booking calendar is a dialog that stays open once a day is
     /// picked, covering a "Find flights" button, until Escape closes it.
     CalendarStaysOpen,
+    /// The booking calendar draws each day as a grid cell holding its
+    /// number and a fare, under a heading naming its month, as a hotel
+    /// site's does: no day names its month.
+    BareCalendarDays,
+    /// A box's list of suggestions stays open with an empty backdrop over
+    /// the rest of the page, as a store's search box left it: a click there
+    /// is refused as covered by that empty layer, Escape leaves it, and only
+    /// a press on the backdrop itself closes it.
+    Backdrop,
+    /// The press the backdrop refused scrolled the page's header into view,
+    /// under the backdrop: its three controls show as covered too.
+    HeaderUnderBackdrop,
+    /// A location button of the page's own is drawn over its controls: a
+    /// click there is refused as covered by it, and neither Escape nor a
+    /// press outside moves it.
+    ControlOver,
+    /// An empty layer over the page that nothing closes: a click there is
+    /// refused as covered by it, and pressing it is refused too.
+    StubbornBackdrop,
+    /// An empty layer over the page that goes by itself after refusing two
+    /// clicks, before anything presses it.
+    FleetingBackdrop,
+    /// The fleeting layer has refused one click.
+    FleetingOnce,
 }
 
 #[derive(Debug, Default)]
@@ -251,7 +275,8 @@ impl App {
             city_rows(&root, &mut candidates);
         }
         overlays(&sim, &root, &mut candidates);
-        let text_nodes = result_cards(&sim, &root, &mut candidates);
+        let mut text_nodes = result_cards(&sim, &root, &mut candidates);
+        text_nodes.extend(heading_node(&sim, &root));
         let surface = surface_of(&sim);
         if sim.obstacle {
             obstacle_sheet(&sim, &mut candidates);
@@ -263,6 +288,7 @@ impl App {
             candidates,
             context: std::iter::once(format!("{window} heading"))
                 .chain(sim.hint.map(str::to_owned))
+                .chain(calendar_heading(&sim))
                 .collect(),
             unexplored: Vec::new(),
             text_nodes,
@@ -326,6 +352,34 @@ fn refused_click(sim: &mut Sim, name: &str) -> Option<DesktopResponse> {
             .is_some_and(|booking| booking.calendar.is_some())
     {
         return Some(covered("calendar"));
+    }
+    // What covers the click as the browser surface names it, and whether
+    // that is an empty layer a press outside closes.
+    let named = |by: &str, cover: &str, empty: bool| {
+        let mut reply = covered(by);
+        if let Some(error) = reply.error.as_mut() {
+            error.details = Some(json!({"cover": cover, "empty_layer": empty}));
+        }
+        reply
+    };
+    if sim.has(Quirk::Backdrop) {
+        sim.quirks.insert(Quirk::HeaderUnderBackdrop);
+        return Some(named("backdrop", "an empty layer", true));
+    }
+    if sim.has(Quirk::ControlOver) {
+        return Some(named("location", "button \"Select Location\"", false));
+    }
+    if sim.has(Quirk::StubbornBackdrop) {
+        return Some(named("backdrop", "an empty layer", true));
+    }
+    if sim.has(Quirk::FleetingBackdrop) {
+        if sim.has(Quirk::FleetingOnce) {
+            sim.quirks.remove(&Quirk::FleetingBackdrop);
+            sim.quirks.remove(&Quirk::FleetingOnce);
+        } else {
+            sim.quirks.insert(Quirk::FleetingOnce);
+        }
+        return Some(named("backdrop", "an empty layer", true));
     }
     sim.has(Quirk::Drawer).then(|| covered("drawer"))
 }
@@ -509,6 +563,26 @@ impl AgentBackend for App {
             _ => {}
         }
         DesktopResponse::ok("press", json!({}))
+    }
+
+    fn dismiss_cover(&self, _target: &Candidate) -> DesktopResponse {
+        let mut sim = self.sim();
+        if sim.has(Quirk::StubbornBackdrop) {
+            return DesktopResponse::err(
+                "dismiss-cover",
+                tinycomputer_bus::DesktopError::new(
+                    "NOT_ACTIONABLE",
+                    "an empty layer lies over the element, and every spot on it lies over something pressable, so it was not pressed",
+                ),
+            );
+        }
+        if !sim.has(Quirk::Backdrop) {
+            return DesktopResponse::ok("dismiss-cover", json!({"dismissed": null}));
+        }
+        sim.quirks.remove(&Quirk::Backdrop);
+        sim.quirks.remove(&Quirk::HeaderUnderBackdrop);
+        sim.clicks.push("the backdrop".to_owned());
+        DesktopResponse::ok("dismiss-cover", json!({"dismissed": "an empty layer"}))
     }
 
     fn back(&self, _app: &str) -> DesktopResponse {

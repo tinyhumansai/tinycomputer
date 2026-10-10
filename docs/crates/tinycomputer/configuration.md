@@ -228,7 +228,9 @@ never sent to a provider it was not given for:
 ```
 
 How the module launches every browser it opens — each task's, and each
-`BrowserOpenSession` that leaves the setting unset. Every key is optional:
+`BrowserOpenSession` that leaves the setting unset; a task's own
+`browser_executable` takes the place of `executable`. Every key is
+optional:
 
 | Key | What it does |
 |---|---|

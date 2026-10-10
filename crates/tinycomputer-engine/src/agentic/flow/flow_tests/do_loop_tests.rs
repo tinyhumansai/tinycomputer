@@ -115,6 +115,155 @@ async fn a_covered_click_closes_what_covers_it_and_tries_again() {
 }
 
 #[tokio::test]
+async fn an_empty_layer_escape_leaves_is_pressed_outside_and_the_press_tried_again() {
+    // Live, a store's search box left its suggestions open with a backdrop
+    // over the page that Escape left there. Its basket button was refused
+    // under it, the refused press read as one that opened a dialog, and the
+    // step's failure told a rescue to answer that dialog: it re-added items.
+    let run = run_with(
+        App::quirky(Quirk::Backdrop),
+        json!({"app": "Mail", "steps": ["start a new email message"]}),
+        |request| request.disabled_loops.push(FlowLoop::Attention),
+        |id, question, _| (id == "move").then(|| pick(question, "activate", 0.9)),
+    )
+    .await;
+    assert_eq!(
+        run.result.stop,
+        FlowStopReason::Completed,
+        "{:?}",
+        run.result.steps
+    );
+    let sim = run.app.sim();
+    assert!(sim.compose_open);
+    assert_eq!(sim.presses, ["escape"]);
+    assert_eq!(sim.clicks, ["the backdrop", "New Message"]);
+    assert_eq!(
+        run.result.steps[0]
+            .actions
+            .iter()
+            .map(|action| action.action.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "click",
+            "press escape (uncover)",
+            "click",
+            "press the cover (uncover)",
+            "click"
+        ],
+    );
+    let told = |text: &str| {
+        run.requests.iter().any(|request| {
+            serde_json::to_string(&request.state)
+                .unwrap()
+                .contains(text)
+        })
+    };
+    assert!(told(
+        "was covered by an empty layer; pressed escape to close it"
+    ));
+    assert!(told(
+        "was still covered by an empty layer; pressed an empty part of it"
+    ));
+    assert!(
+        !told("the last press opened a dialog"),
+        "a press the page refused opened nothing, though the header it scrolled in is covered"
+    );
+}
+
+#[tokio::test]
+async fn a_layer_that_cannot_be_pressed_or_went_by_itself_is_handled_as_it_is() {
+    let activate = |id: &str, question: &Question, _: &Sim| {
+        (id == "move").then(|| pick(question, "activate", 0.9))
+    };
+    let told = |run: &Run, text: &str| {
+        run.requests.iter().any(|request| {
+            serde_json::to_string(&request.state)
+                .unwrap()
+                .contains(text)
+        })
+    };
+    // A layer the surface will not press: the step fails naming it.
+    let stuck = run_with(
+        App::quirky(Quirk::StubbornBackdrop),
+        json!({"app": "Mail", "steps": ["start a new email message"]}),
+        |request| request.disabled_loops.push(FlowLoop::Attention),
+        activate,
+    )
+    .await;
+    assert_eq!(stuck.result.stop, FlowStopReason::StepFailed);
+    let step = &stuck.result.steps[0];
+    assert!(
+        step.note.ends_with(
+            "its press of button \"New Message\" was refused because an empty layer lies over it"
+        ),
+        "{}",
+        step.note
+    );
+    assert!(!told(&stuck, "pressed an empty part of it"));
+    assert!(!stuck.app.sim().compose_open);
+
+    // A layer gone by itself before it is pressed: the press is tried
+    // again, and nothing claims the layer was pressed.
+    let gone = run_with(
+        App::quirky(Quirk::FleetingBackdrop),
+        json!({"app": "Mail", "steps": ["start a new email message"]}),
+        |request| request.disabled_loops.push(FlowLoop::Attention),
+        activate,
+    )
+    .await;
+    assert_eq!(gone.result.stop, FlowStopReason::Completed);
+    assert_eq!(
+        gone.result.steps[0]
+            .actions
+            .iter()
+            .map(|action| action.action.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "click",
+            "press escape (uncover)",
+            "click",
+            "press the cover (uncover)",
+            "click"
+        ],
+    );
+    assert_eq!(gone.app.sim().clicks, ["New Message"]);
+    assert!(!told(&gone, "pressed an empty part of it"));
+}
+
+#[tokio::test]
+async fn a_press_a_control_still_covers_fails_naming_that_control() {
+    let run = run_with(
+        App::quirky(Quirk::ControlOver),
+        json!({"app": "Mail", "steps": ["start a new email message"]}),
+        |request| request.disabled_loops.push(FlowLoop::Attention),
+        |id, question, _| (id == "move").then(|| pick(question, "activate", 0.9)),
+    )
+    .await;
+    assert_eq!(run.result.stop, FlowStopReason::StepFailed);
+    let step = &run.result.steps[0];
+    assert!(
+        step.note.ends_with(
+            "its press of button \"New Message\" was refused because button \"Select Location\" lies over it"
+        ),
+        "{}",
+        step.note
+    );
+    assert!(
+        !step
+            .actions
+            .iter()
+            .any(|action| action.action == "press the cover (uncover)"),
+        "a control is never pressed as an empty layer: {:?}",
+        step.actions
+    );
+    assert!(run.requests.iter().any(|request| {
+        serde_json::to_string(&request.state)
+            .unwrap()
+            .contains("is still covered by button \\\"Select Location\\\": deal with that first")
+    }));
+}
+
+#[tokio::test]
 async fn a_covered_click_closes_the_banner_in_front_with_its_own_button() {
     // Live, a consent banner lay over "Add To Cart"; Escape left it there,
     // and every press was refused. Its least committal button closes it.

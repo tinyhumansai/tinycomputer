@@ -28,7 +28,6 @@ impl<B: AgentBackend + Sync> FlowRun<'_, B> {
             return Err(Halt::Stop(FlowStopReason::ActionBudget));
         }
         self.actions = self.actions.saturating_add(1);
-        self.front.act(action, target);
         if action != "wait" {
             let typing = ["fill", "type", "paste"]
                 .iter()
@@ -38,6 +37,13 @@ impl<B: AgentBackend + Sync> FlowRun<'_, B> {
         let started = Instant::now();
         let reply = self.backend_call(call).await;
         let acted_ms = millis(started.elapsed());
+        // A press the page refused never reached it, so it opened nothing in
+        // front. Live, a refused press of a store's basket button counted as
+        // one, the controls that read as covered after it were taken for a
+        // dialog it opened, and the step's failure told a rescue to answer it.
+        if !refused(&reply) {
+            self.front.act(action, target);
+        }
         if let Some(url) = reply
             .data
             .as_ref()
@@ -135,6 +141,19 @@ impl<B: AgentBackend + Sync> FlowRun<'_, B> {
 /// and 70% of clicks, which settle in full.
 fn fetches_nothing(action: &str) -> bool {
     action == "launch" || action.starts_with("launch ") || action.starts_with("press escape")
+}
+
+/// Whether the page refused `reply`'s action before it reached the page
+/// (`NOT_ACTIONABLE`: covered, not visible, or not interactable). The
+/// browser checks a target before it sends any input; its only press that
+/// can land and still come back refused is one through a result card's own
+/// cover whose last mouse event fails in transit, which presses that card's
+/// own control.
+fn refused(reply: &DesktopResponse) -> bool {
+    reply
+        .error
+        .as_ref()
+        .is_some_and(|error| error.code == "NOT_ACTIONABLE")
 }
 
 /// Whether `reply` is a wait's that saw the surface stay still.

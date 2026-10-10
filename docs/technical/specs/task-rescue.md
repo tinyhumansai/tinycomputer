@@ -95,6 +95,11 @@ fails the task.
 - **Act.** Jev still decides every action on the screen.
 - **Rescue walls, invalid flows, or exhausted budgets.** A person comes
   first, and a budget or validity failure is not the page's fault.
+- **Rescue a browser that cannot start.** A step whose last action was
+  refused `BROWSER_UNAVAILABLE` fails the task at once, not recoverable, with
+  a hint to give the path of Chrome or Chromium (`browser_executable`): no
+  step a rescue writes starts one. Live, four rescues of it spent minutes
+  before the rescuer gave up.
 - **Run under `RunFlow` alone.** Rescues belong to the task controller, so
   the flow runtime keeps one door, to Jev.
 - **Rewrite later steps.** It may drop the steps its own guidance already

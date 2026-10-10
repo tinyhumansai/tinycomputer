@@ -209,19 +209,27 @@ pub struct TaskConstraints {
     pub allow_destructive: bool,
     pub browser_endpoint: Option<String>,
     pub headed: bool,
+    pub browser_executable: Option<String>,
+    pub browser_profile: Option<String>,
 }
 ```
 
 - `surfaces` restricts a task to `desktop`, `browser`, or both; see
   [workspace.md](workspace.md) for how a flow step then routes to the right
   one.
-- `origins` restricts which web origins a browser session may load: the
-  sites card details may be typed on, for instance.
+- `origins` restricts which sites a browser session may open pages on: the
+  sites card details may be typed on, for instance. `*` admits any public
+  site, but never names one card details may be typed on. Only pages are
+  checked, never the files a page loads from its CDN or APIs.
 - `allow_destructive` lets a task perform irreversible actions without
   pausing at all. Off by default: a fresh task always pauses at a
   `stop_before` unless told otherwise.
 - `browser_endpoint` and `headed` control how the browser surface is
   attached (an existing signed-in Chrome, shown rather than headless).
+- `browser_executable` and `browser_profile` choose the binary the task's
+  browser launches and an absolute folder its profile is kept in, so a site
+  signed into once stays signed in for later tasks (`INVALID_REQUEST` for a
+  relative folder).
 
 ## Payment modes
 

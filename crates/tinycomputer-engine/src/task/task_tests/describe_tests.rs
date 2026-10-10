@@ -189,9 +189,20 @@ async fn describe_schemas_name_every_request_field() {
     let start = serde_json::to_value(start).unwrap();
     let start_schema = schema("StartTask");
     assert_eq!(documented(&start_schema), fields(&start));
+    // The host's own settings are no model's to set, so they are not offered.
+    let offered = fields(&start["constraints"])
+        .into_iter()
+        .filter(|field| !["browser_executable", "browser_profile"].contains(&field.as_str()))
+        .collect::<Vec<_>>();
     assert_eq!(
         documented(&start_schema["properties"]["constraints"]),
-        fields(&start["constraints"])
+        offered
+    );
+    assert!(
+        start_schema["properties"]["constraints"]["properties"]
+            .get("browser_executable")
+            .is_none(),
+        "a model is never offered the binary a task launches"
     );
     let budget = tinycomputer_bus::agent::TaskBudget {
         max_actions: Some(1),
