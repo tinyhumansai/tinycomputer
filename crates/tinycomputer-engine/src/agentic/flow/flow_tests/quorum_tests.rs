@@ -287,7 +287,7 @@ async fn a_decision_waits_for_every_framing_unless_five_agree_plainly() {
     plan[6] = (3_000, agreeing);
     let handles = paced(&framings, &plan, &finished);
     let gathered = quorum::gather(framings, handles, quorum::size(7)).await;
-    assert_eq!(started.elapsed(), Duration::from_millis(3_000));
+    assert_eq!(started.elapsed(), Duration::from_secs(3));
     assert_eq!((gathered.answered.len(), gathered.left), (7, 0));
 
     // A failed framing is no answer; five others are a quorum still.
@@ -309,7 +309,7 @@ async fn a_decision_waits_for_every_framing_unless_five_agree_plainly() {
     plan[5] = (2_000, agreeing);
     let handles = paced(&framings, &plan, &finished);
     let gathered = quorum::gather(framings, handles, quorum::size(6)).await;
-    assert_eq!(started.elapsed(), Duration::from_millis(2_000));
+    assert_eq!(started.elapsed(), Duration::from_secs(2));
     assert_eq!((gathered.answered.len(), gathered.left), (6, 0));
 }
 

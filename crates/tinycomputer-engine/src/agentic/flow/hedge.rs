@@ -17,11 +17,11 @@ use crate::agentic::{JevRuntime, journal::millis};
 /// timeout) as its siblings answered in under 1 s. Calls on a slow evening
 /// took up to 3.4 s and still answered: a copy sent at 2.5 s lost the race
 /// 15 times in 16, so copies wait for 4 s, past what a slow answer takes.
-const HEDGE_AFTER: Duration = Duration::from_millis(4_000);
+const HEDGE_AFTER: Duration = Duration::from_secs(4);
 
 /// [`HEDGE_AFTER`] for a request of [`HEDGE_LARGE_BYTES`] or more, whose
 /// p99.9 was 3.9 s live.
-const HEDGE_AFTER_LARGE: Duration = Duration::from_millis(5_000);
+const HEDGE_AFTER_LARGE: Duration = Duration::from_secs(5);
 
 /// Size from which a request waits [`HEDGE_AFTER_LARGE`] for its first
 /// answer.
