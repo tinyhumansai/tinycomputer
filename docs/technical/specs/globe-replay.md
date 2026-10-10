@@ -1,0 +1,9 @@
+# Reliable Globe listener batches
+
+Contract 2.12 adds one-argument GlobeRead with an existing lease and optional acknowledged batch number. The module retains one bounded typed snapshot until acknowledgment; discarded transport replies and repeated acknowledgments return the same snapshot without draining again. Future acknowledgments fail without changing state. Unknown or stopped leases never reopen. Existing GlobeStart/Poll/Stop members keep their arities and JSON.
+
+Native queue overflow is explicit. A returned overflow snapshot requires the consumer to reset activation to inactive before interpreting new events and to require a fresh release before rearming a held key. No loss may silently preserve active recording. Legacy destructive Poll invalidates reliable continuity; the next reliable batch reports overflow/reset. Reliable clients use Read exclusively.
+
+The native owner retains child and pipe worker ownership through cancellation and cleanup failures. Stop succeeds only after termination, reaping and joining both readers. Failed cleanup remains reachable through the lease and can be retried. Start failure cleans partial native registration and refuses publication. Explicit terminal shutdown closes admission, waits native work and rejects late startup; it must complete before ABI unload.
+
+The contract holds serialized declarations only. Native process management remains in accessibility implementation; the module maintains lease/replay state. Voice composition consumes authorized typed facts, never a direct accessibility implementation dependency. No host adapter or release pin switches in this slice.

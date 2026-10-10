@@ -198,3 +198,14 @@ released handles return `UNKNOWN_LISTENER`. No existing member changes arity.
 Hosts may adopt these operations only after pinning a released contract-2.11
 artifact with its verified digest. Native libraries belong to that artifact,
 not to the bus crate or consuming host.
+
+## Reliable native Globe input (2.12)
+
+GlobeRead takes a GlobeRead request and returns a retained typed GlobeBatch inside
+the existing DesktopResponse envelope. Identical reads replay the snapshot until
+acknowledged; repeated acknowledgments cannot skip the next snapshot. Native
+queue loss and legacy Poll gaps are explicit overflow/reset facts. GlobeShutdown
+is a zero-argument terminal joined native cleanup barrier, including pending
+startup/compiler work; hosts must await success before ABI unload. Stop remains
+per-lease/reusable and retains ownership on native cleanup faults. Existing
+member arities and legacy poll JSON are unchanged. See [Globe replay](globe-replay.md).

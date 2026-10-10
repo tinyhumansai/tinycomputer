@@ -69,28 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if declared != METHODS {
         return Err(io::Error::other("manifest members differ from contract").into());
     }
-    // Invalid handles exercise the new artifact paths without touching devices.
-    for member in [
-        names::accessibility::GLOBE_POLL,
-        names::accessibility::GLOBE_STOP,
-    ] {
-        let reply: DesktopResponse = proxy
-            .call(
-                member,
-                (tinycomputer_bus::accessibility::GlobeHandle(
-                    "fixture-invalid".into(),
-                ),),
-            )
-            .await?;
-        if reply.ok
-            || reply
-                .error
-                .as_ref()
-                .is_none_or(|error| error.code != "UNKNOWN_LISTENER")
-        {
-            return Err(io::Error::other("module accepted an unknown listener lease").into());
-        }
-    }
+    verify_globe_lifecycle(&proxy).await?;
 
     // Wrong-arity inputs stay safe even if a confidentiality guard regresses.
     for member in [
@@ -116,6 +95,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         METHODS.len()
     );
     broker_task.abort();
+    Ok(())
+}
+
+/// Checks native lease admission and terminal shutdown without device access.
+async fn verify_globe_lifecycle(proxy: &tinybus::Proxy) -> Result<(), Box<dyn std::error::Error>> {
+    // Invalid handles exercise the new artifact paths without touching devices.
+    for member in [
+        names::accessibility::GLOBE_POLL,
+        names::accessibility::GLOBE_STOP,
+    ] {
+        let reply: DesktopResponse = proxy
+            .call(
+                member,
+                (tinycomputer_bus::accessibility::GlobeHandle(
+                    "fixture-invalid".into(),
+                ),),
+            )
+            .await?;
+        if reply.ok
+            || reply
+                .error
+                .as_ref()
+                .is_none_or(|error| error.code != "UNKNOWN_LISTENER")
+        {
+            return Err(io::Error::other("module accepted an unknown listener lease").into());
+        }
+    }
+
+    let read: DesktopResponse = proxy
+        .call(
+            names::accessibility::GLOBE_READ,
+            (tinycomputer_bus::accessibility::GlobeRead {
+                handle: tinycomputer_bus::accessibility::GlobeHandle("fixture-invalid".into()),
+                acknowledged_batch: None,
+            },),
+        )
+        .await?;
+    if read.ok
+        || read
+            .error
+            .as_ref()
+            .is_none_or(|error| error.code != "UNKNOWN_LISTENER")
+    {
+        return Err(io::Error::other("reliable read accepted an unknown lease").into());
+    }
+    let shutdown: DesktopResponse = proxy.call(names::accessibility::GLOBE_SHUTDOWN, ()).await?;
+    if !shutdown.ok {
+        return Err(io::Error::other("native terminal cleanup failed").into());
+    }
+    let late: DesktopResponse = proxy.call(names::accessibility::GLOBE_START, ()).await?;
+    if late.ok {
+        return Err(io::Error::other("listener started after terminal shutdown").into());
+    }
+
     Ok(())
 }
 

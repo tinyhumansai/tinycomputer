@@ -230,6 +230,11 @@ fn native_wire_sweep() -> Vec<(&'static str, serde_json::Value)> {
         (names::accessibility::GLOBE_START, nothing.clone()),
         (names::accessibility::GLOBE_POLL, json!(["unknown-lease"])),
         (names::accessibility::GLOBE_STOP, json!(["unknown-lease"])),
+        (
+            names::accessibility::GLOBE_READ,
+            json!([{"handle":"unknown-lease","acknowledged_batch":null}]),
+        ),
+        (names::accessibility::GLOBE_SHUTDOWN, nothing),
     ]
 }
 

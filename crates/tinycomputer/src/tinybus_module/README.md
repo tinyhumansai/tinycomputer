@@ -83,6 +83,12 @@ the real dynamic loader before a release archive is accepted.
 
 ## Native accessibility lifecycle
 
-Eight native members delegate to the accessibility implementation on blocking
+Ten native members delegate to the accessibility implementation on blocking
 threads, with module-owned listener leases. No device or helper behavior runs
 in the host. See the [contract](../../../tinycomputer-bus/src/accessibility/README.md).
+
+GlobeRead retains a bounded typed batch until acknowledgment. Native overflow or
+legacy destructive polling marks continuity loss, requiring activation reset.
+GlobeShutdown rejects new listener acquisition, cancels pending compiler work,
+and awaits native child/pipe cleanup before returning. Stop failures retain
+ownership for retry; terminal shutdown must succeed before generic ABI unload.

@@ -3,8 +3,9 @@ use serde::Serialize;
 use std::sync::Mutex;
 use tinycomputer_accessibility as native;
 use tinycomputer_bus::accessibility::{
-    Error, FocusQuery, FocusTarget, FocusedTextContext, GlobeHandle, GlobeHotkeyPollResult,
-    GlobeHotkeyStatus, GlobeStarted, PasteRequest, PermissionKind, PermissionStatus, Result,
+    Error, FocusQuery, FocusTarget, FocusedTextContext, GlobeBatch, GlobeEvent, GlobeHandle,
+    GlobeHotkeyPollResult, GlobeHotkeyStatus, GlobeRead, GlobeStarted, PasteRequest,
+    PermissionKind, PermissionStatus, Result,
 };
 use tinycomputer_bus::{DesktopError, DesktopResponse};
 
@@ -14,8 +15,10 @@ pub(super) trait Backend: std::fmt::Debug + Send + Sync {
     fn focus(&self, query: FocusQuery) -> Result<FocusedTextContext>;
     fn validate(&self, target: &FocusTarget) -> Result<()>;
     fn paste(&self, request: PasteRequest) -> Result<()>;
-    fn start(&self) -> Result<GlobeHotkeyStatus>;
-    fn poll(&self) -> Result<GlobeHotkeyPollResult>;
+    fn start(&self, cancel: &std::sync::atomic::AtomicBool) -> Result<GlobeHotkeyStatus>;
+    fn poll(&self, cancel: &std::sync::atomic::AtomicBool) -> Result<GlobeHotkeyPollResult>;
+    fn read(&self, cancel: &std::sync::atomic::AtomicBool)
+    -> Result<(GlobeHotkeyPollResult, bool)>;
     fn stop(&self) -> Result<GlobeHotkeyStatus>;
 }
 #[derive(Debug)]
@@ -56,20 +59,35 @@ impl Backend for Platform {
         native::paste::insert_text(&request.text, request.target.app.as_deref())
             .map_err(Error::InsertionFailed)
     }
-    fn start(&self) -> Result<GlobeHotkeyStatus> {
-        native::globe_listener_start()
+    fn start(&self, cancel: &std::sync::atomic::AtomicBool) -> Result<GlobeHotkeyStatus> {
+        native::globe_listener_start_with_cancel(cancel)
     }
-    fn poll(&self) -> Result<GlobeHotkeyPollResult> {
-        native::globe_listener_poll()
+    fn poll(&self, cancel: &std::sync::atomic::AtomicBool) -> Result<GlobeHotkeyPollResult> {
+        native::globe_listener_read_with_cancel(cancel).map(|(result, _)| result)
+    }
+    fn read(
+        &self,
+        cancel: &std::sync::atomic::AtomicBool,
+    ) -> Result<(GlobeHotkeyPollResult, bool)> {
+        native::globe_listener_read_with_cancel(cancel)
     }
     fn stop(&self) -> Result<GlobeHotkeyStatus> {
         native::globe_listener_stop()
     }
 }
 #[derive(Debug)]
+struct Listener {
+    handle: GlobeHandle,
+    batch: u64,
+    snapshot: Option<GlobeBatch>,
+    legacy_gap: bool,
+}
+#[derive(Debug)]
 pub(super) struct Access {
     backend: std::sync::Arc<dyn Backend>,
-    listener: Mutex<Option<GlobeHandle>>,
+    listener: Mutex<Option<Listener>>,
+    terminal: std::sync::atomic::AtomicBool,
+    native_owned: std::sync::atomic::AtomicBool,
 }
 impl Default for Access {
     fn default() -> Self {
@@ -81,6 +99,8 @@ impl Access {
         Self {
             backend,
             listener: Mutex::new(None),
+            terminal: std::sync::atomic::AtomicBool::new(false),
+            native_owned: std::sync::atomic::AtomicBool::new(false),
         }
     }
     pub(super) fn permissions(&self) -> PermissionStatus {
@@ -104,50 +124,145 @@ impl Access {
             .listener
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.terminal.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(Error::GlobeListener("listener shutdown".into()));
+        }
         let mut entropy = [0_u8; 16];
         getrandom::fill(&mut entropy)
             .map_err(|_| Error::GlobeListener("listener entropy unavailable".into()))?;
-        let status = self.backend.start()?;
+        self.native_owned
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let status = match self.backend.start(&self.terminal) {
+            Ok(status) => status,
+            Err(error) => {
+                self.backend.stop()?;
+                self.native_owned
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                return Err(error);
+            }
+        };
         if !status.supported {
+            self.native_owned
+                .store(false, std::sync::atomic::Ordering::SeqCst);
             return Err(Error::UnsupportedPlatform);
         }
+        if self.terminal.load(std::sync::atomic::Ordering::SeqCst) {
+            self.backend.stop()?;
+            return Err(Error::GlobeListener("listener shutdown".into()));
+        }
         let handle = guard
-            .get_or_insert_with(|| GlobeHandle(format!("{:032x}", u128::from_le_bytes(entropy))))
+            .get_or_insert_with(|| Listener {
+                handle: GlobeHandle(format!("{:032x}", u128::from_le_bytes(entropy))),
+                batch: 0,
+                snapshot: None,
+                legacy_gap: false,
+            })
+            .handle
             .clone();
         Ok(GlobeStarted { handle, status })
     }
     pub(super) fn poll(&self, handle: &GlobeHandle) -> Result<GlobeHotkeyPollResult> {
-        let guard = self
+        let mut guard = self
             .listener
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if guard.as_ref() != Some(handle) {
+        if guard.as_ref().map(|listener| &listener.handle) != Some(handle) {
             return Err(Error::UnknownListener);
         }
-        self.backend.poll()
+        let result = self.backend.poll(&self.terminal)?;
+        if let Some(listener) = guard.as_mut() {
+            listener.legacy_gap = true;
+        }
+        Ok(result)
+    }
+    pub(super) fn read(&self, request: &GlobeRead) -> Result<GlobeBatch> {
+        let mut guard = self
+            .listener
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(listener) = guard.as_mut().filter(|l| l.handle == request.handle) else {
+            return Err(Error::UnknownListener);
+        };
+        if request
+            .acknowledged_batch
+            .is_some_and(|ack| ack > listener.batch)
+        {
+            return Err(Error::GlobeListener("invalid batch acknowledgement".into()));
+        }
+        if let Some(snapshot) = &listener.snapshot
+            && request.acknowledged_batch != Some(snapshot.batch)
+        {
+            return Ok(snapshot.clone());
+        }
+        let batch = listener
+            .batch
+            .checked_add(1)
+            .ok_or_else(|| Error::GlobeListener("batch identity exhausted".into()))?;
+        let (result, overflow) = self.backend.read(&self.terminal)?;
+        let mut gap =
+            overflow || listener.legacy_gap || !result.status.running || result.events.len() > 64;
+        let events = result
+            .events
+            .into_iter()
+            .take(64)
+            .filter_map(|event| match event.as_str() {
+                "FN_DOWN" => Some(GlobeEvent::Down),
+                "FN_UP" => Some(GlobeEvent::Up),
+                _ => {
+                    gap = true;
+                    None
+                }
+            })
+            .collect();
+        let snapshot = GlobeBatch {
+            handle: listener.handle.clone(),
+            batch,
+            status: result.status,
+            events,
+            overflow: gap,
+        };
+        listener.batch = batch;
+        listener.legacy_gap = false;
+        listener.snapshot = Some(snapshot.clone());
+        Ok(snapshot)
+    }
+    pub(super) fn close_admission(&self) {
+        self.terminal
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+    pub(super) fn shutdown(&self) -> Result<GlobeHotkeyStatus> {
+        self.terminal
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let mut guard = self
+            .listener
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let status = self.backend.stop()?;
+        self.native_owned
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        *guard = None;
+        Ok(status)
     }
     pub(super) fn stop(&self, handle: &GlobeHandle) -> Result<GlobeHotkeyStatus> {
         let mut guard = self
             .listener
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if guard.as_ref() != Some(handle) {
+        if guard.as_ref().map(|listener| &listener.handle) != Some(handle) {
             return Err(Error::UnknownListener);
         }
         let status = self.backend.stop()?;
+        self.native_owned
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         *guard = None;
         Ok(status)
     }
 }
 impl Drop for Access {
     fn drop(&mut self) {
-        if self
-            .listener
-            .get_mut()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take()
-            .is_some()
-        {
+        // Explicit GlobeShutdown is the fallible unload barrier. This also
+        // covers partial failed startup when no public lease was published.
+        if self.native_owned.load(std::sync::atomic::Ordering::SeqCst) {
             let _ = self.backend.stop();
         }
     }
@@ -193,3 +308,10 @@ mod tests;
 pub(super) fn fixture() -> std::sync::Arc<Access> {
     tests::fixture_access()
 }
+
+#[cfg(test)]
+#[path = "accessibility_fixture.rs"]
+mod fixture;
+#[cfg(test)]
+#[path = "accessibility_replay_tests.rs"]
+mod replay_tests;

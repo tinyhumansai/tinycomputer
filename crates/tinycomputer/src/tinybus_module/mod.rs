@@ -74,7 +74,7 @@ tinybus_module::module_export! {
         "DismissAllNotifications",
         "Wait",
         "Version", "Status", "Permissions",
-        "AccessibilityPermissions", "AccessibilityRequestPermission", "AccessibilityFocus", "AccessibilityValidateTarget", "AccessibilityPaste", "GlobeStart", "GlobePoll", "GlobeStop",
+        "AccessibilityPermissions", "AccessibilityRequestPermission", "AccessibilityFocus", "AccessibilityValidateTarget", "AccessibilityPaste", "GlobeStart", "GlobePoll", "GlobeRead", "GlobeShutdown", "GlobeStop",
         "BrowserOpenSession", "BrowserCloseSession", "BrowserListSessions", "BrowserNavigate",
         "BrowserSnapshot", "BrowserPerform", "BrowserReadPage", "BrowserEvaluate",
         "BrowserScreenshot", "BrowserReadOutput", "BrowserReleaseOutput", "BrowserListDownloads",

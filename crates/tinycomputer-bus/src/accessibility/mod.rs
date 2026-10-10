@@ -4,7 +4,7 @@ mod error;
 mod globe;
 mod types;
 pub use error::{Error, Result};
-pub use globe::{GlobeHotkeyPollResult, GlobeHotkeyStatus};
+pub use globe::{GlobeBatch, GlobeEvent, GlobeHotkeyPollResult, GlobeHotkeyStatus, GlobeRead};
 pub use types::{
     ElementBounds, FocusedTextContext, PermissionKind, PermissionState, PermissionStatus,
 };

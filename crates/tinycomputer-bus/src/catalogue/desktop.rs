@@ -373,6 +373,18 @@ pub(super) const DESKTOP: &[Member] = &[
         false,
     ),
     entry(
+        crate::names::accessibility::GLOBE_READ,
+        Family::Desktop,
+        "Reads an acknowledged replayable Globe batch.",
+        false,
+    ),
+    entry(
+        crate::names::accessibility::GLOBE_SHUTDOWN,
+        Family::Desktop,
+        "Joins terminal native listener cleanup.",
+        false,
+    ),
+    entry(
         crate::names::accessibility::GLOBE_STOP,
         Family::Desktop,
         "Stops and releases a Globe listener lease.",

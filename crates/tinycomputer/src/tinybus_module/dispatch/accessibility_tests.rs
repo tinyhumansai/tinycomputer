@@ -10,79 +10,7 @@ use std::sync::{
 };
 use tinycomputer_bus::accessibility::PermissionState;
 
-#[derive(Debug, Default)]
-struct Fixture {
-    reject_target: AtomicBool,
-    calls: Mutex<Vec<&'static str>>,
-}
-impl Fixture {
-    fn called(&self, operation: &'static str) {
-        self.calls.lock().expect("calls").push(operation);
-    }
-    fn status() -> GlobeHotkeyStatus {
-        GlobeHotkeyStatus {
-            supported: true,
-            running: true,
-            input_monitoring_permission: PermissionState::Granted,
-            last_error: None,
-            events_pending: 0,
-        }
-    }
-}
-impl Backend for Fixture {
-    fn permissions(&self) -> PermissionStatus {
-        self.called("permissions");
-        PermissionStatus {
-            accessibility: PermissionState::Granted,
-            input_monitoring: PermissionState::Denied,
-            microphone: PermissionState::Unknown,
-        }
-    }
-    fn request_permission(&self, _: PermissionKind) -> PermissionStatus {
-        self.called("request");
-        self.permissions()
-    }
-    fn focus(&self, _: FocusQuery) -> Result<FocusedTextContext> {
-        self.called("focus");
-        Ok(FocusedTextContext {
-            app_name: Some("fixture".into()),
-            role: None,
-            text: "captured".into(),
-            selected_text: None,
-            raw_error: None,
-            bounds: None,
-        })
-    }
-    fn validate(&self, _: &FocusTarget) -> Result<()> {
-        self.called("validate");
-        if self.reject_target.load(Ordering::SeqCst) {
-            Err(Error::FocusTargetChanged)
-        } else {
-            Ok(())
-        }
-    }
-    fn paste(&self, _: PasteRequest) -> Result<()> {
-        self.called("paste");
-        Ok(())
-    }
-    fn start(&self) -> Result<GlobeHotkeyStatus> {
-        self.called("start");
-        Ok(Self::status())
-    }
-    fn poll(&self) -> Result<GlobeHotkeyPollResult> {
-        self.called("poll");
-        Ok(GlobeHotkeyPollResult {
-            status: Self::status(),
-            events: vec!["FN_DOWN".into(), "FN_UP".into()],
-        })
-    }
-    fn stop(&self) -> Result<GlobeHotkeyStatus> {
-        self.called("stop");
-        let mut status = Self::status();
-        status.running = false;
-        Ok(status)
-    }
-}
+use super::fixture::Fixture;
 
 #[test]
 fn insertion_validates_the_captured_target_before_touching_the_platform() {
@@ -225,6 +153,20 @@ async fn the_served_interface_routes_native_members_and_listener_handles() {
     let batch: GlobeHotkeyPollResult =
         serde_json::from_value(polled.data.expect("data")).expect("batch");
     assert_eq!(batch.events, ["FN_DOWN", "FN_UP"]);
+    let reliable = tinycomputer_bus::accessibility::GlobeRead {
+        handle: started.handle.clone(),
+        acknowledged_batch: None,
+    };
+    let first: DesktopResponse = proxy
+        .call(names::accessibility::GLOBE_READ, (reliable.clone(),))
+        .await
+        .expect("read");
+    let retried: DesktopResponse = proxy
+        .call(names::accessibility::GLOBE_READ, (reliable,))
+        .await
+        .expect("replay");
+    assert_eq!(first.data, retried.data);
+    assert_eq!(first.data.as_ref().expect("batch")["overflow"], true);
     let stopped: DesktopResponse = proxy
         .call(names::accessibility::GLOBE_STOP, (started.handle.clone(),))
         .await
@@ -236,6 +178,16 @@ async fn the_served_interface_routes_native_members_and_listener_handles() {
         .expect("released reply");
     assert!(!released.ok);
     assert_eq!(released.error.expect("error").code, "UNKNOWN_LISTENER");
+    let shutdown: DesktopResponse = proxy
+        .call(names::accessibility::GLOBE_SHUTDOWN, ())
+        .await
+        .expect("shutdown");
+    assert!(shutdown.ok);
+    let late: DesktopResponse = proxy
+        .call(names::accessibility::GLOBE_START, ())
+        .await
+        .expect("late start");
+    assert!(!late.ok);
     task.abort();
 }
 
@@ -256,10 +208,15 @@ fn unsupported_focus_and_globe_members_do_not_allocate_native_resources() {
     platform
         .validate(&FocusTarget::default())
         .expect("empty target");
-    assert!(!platform.start().expect("unsupported status").supported);
+    assert!(
+        !platform
+            .start(&AtomicBool::new(false))
+            .expect("unsupported status")
+            .supported
+    );
     assert!(
         platform
-            .poll()
+            .poll(&AtomicBool::new(false))
             .expect("unsupported batch")
             .events
             .is_empty()

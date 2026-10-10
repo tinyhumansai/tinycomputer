@@ -226,6 +226,10 @@ pub mod accessibility {
     pub const GLOBE_POLL: &str = "GlobePoll";
     /// Stops and releases a Globe listener lease.
     pub const GLOBE_STOP: &str = "GlobeStop";
+    /// Replayable acknowledged Globe batch.
+    pub const GLOBE_READ: &str = "GlobeRead";
+    /// Terminal listener teardown before module unload.
+    pub const GLOBE_SHUTDOWN: &str = "GlobeShutdown";
     /// Native members served by the accessibility bridge, in dispatch order.
     pub const METHODS: &[&str] = &[
         ACCESSIBILITY_PERMISSIONS,
@@ -235,6 +239,8 @@ pub mod accessibility {
         ACCESSIBILITY_PASTE,
         GLOBE_START,
         GLOBE_POLL,
+        GLOBE_READ,
+        GLOBE_SHUTDOWN,
         GLOBE_STOP,
     ];
 }
@@ -321,6 +327,8 @@ pub const METHODS: &[&str] = &[
     accessibility::ACCESSIBILITY_PASTE,
     accessibility::GLOBE_START,
     accessibility::GLOBE_POLL,
+    accessibility::GLOBE_READ,
+    accessibility::GLOBE_SHUTDOWN,
     accessibility::GLOBE_STOP,
     crate::browser::names::methods::OPEN_SESSION,
     crate::browser::names::methods::CLOSE_SESSION,

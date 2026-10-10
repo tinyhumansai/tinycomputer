@@ -564,6 +564,29 @@ impl DesktopService {
         .await
     }
 
+    /// Read a replayable acknowledged native Globe batch.
+    async fn globe_read(
+        &self,
+        request: tinycomputer_bus::accessibility::GlobeRead,
+    ) -> TinyBusResult<DesktopResponse> {
+        accessibility::run(Arc::clone(&self.accessibility), "globe-read", move |a| {
+            a.read(&request)
+        })
+        .await
+    }
+
+    /// Terminal joined listener cleanup before unloading the module.
+    async fn globe_shutdown(&self) -> TinyBusResult<DesktopResponse> {
+        // Close admission before scheduling the blocking cleanup barrier.
+        self.accessibility.close_admission();
+        accessibility::run(
+            Arc::clone(&self.accessibility),
+            "globe-shutdown",
+            accessibility::Access::shutdown,
+        )
+        .await
+    }
+
     /// Native globe stop through module-owned resources.
     async fn globe_stop(
         &self,

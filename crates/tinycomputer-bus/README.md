@@ -14,7 +14,7 @@ payload vocabulary has to be published as an ordinary library. This is it.
 
 | module          | what it holds                                                      |
 | --------------- | ------------------------------------------------------------------ |
-| `names`         | interface name, object path, one constant per member — 88 of them   |
+| `names`         | interface name, object path, one constant per member — 90 of them   |
 | `catalogue`     | every member's family, one-line summary, and confidentiality        |
 | `envelope`      | `DesktopResponse` and the structured `DesktopError` it carries      |
 | `vocabulary`    | surfaces, modifiers, buttons, element properties                    |
@@ -157,3 +157,11 @@ vocabulary and opaque Globe listener handles live in `accessibility`; native
 execution remains inside the compiled module. Focus, target validation and paste
 require confidential calls. Hosts must pin a released 2.11-compatible artifact
 and verify its digest before adopting this surface.
+
+Contract 2.12 adds acknowledged GlobeRead batches and terminal GlobeShutdown.
+Read retains one snapshot of at most 64 events until acknowledgment, reports native
+queue loss and legacy-poll gaps explicitly, and preserves existing poll payloads.
+The joined shutdown barrier must succeed before unloading the native artifact.
+See the [Globe contract](src/accessibility/README.md).
+
+Reliable Globe callers require a released 2.12-compatible artifact with a verified digest.
