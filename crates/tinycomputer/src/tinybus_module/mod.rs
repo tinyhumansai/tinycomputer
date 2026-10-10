@@ -38,6 +38,8 @@ pub(crate) use dispatch::DesktopService;
 async fn setup(connection: Connection, config: Value) -> TinyBusResult<()> {
     let service = DesktopService::from_config(&config)
         .map_err(|error| tinybus::Error::failed(error.to_string()))?;
+    #[cfg(test)]
+    let service = service.with_native_fixture();
     service.sweep_outputs();
 
     connection
@@ -72,6 +74,7 @@ tinybus_module::module_export! {
         "DismissAllNotifications",
         "Wait",
         "Version", "Status", "Permissions",
+        "AccessibilityPermissions", "AccessibilityRequestPermission", "AccessibilityFocus", "AccessibilityValidateTarget", "AccessibilityPaste", "GlobeStart", "GlobePoll", "GlobeRead", "GlobeShutdown", "GlobeStop",
         "BrowserOpenSession", "BrowserCloseSession", "BrowserListSessions", "BrowserNavigate",
         "BrowserSnapshot", "BrowserPerform", "BrowserReadPage", "BrowserEvaluate",
         "BrowserScreenshot", "BrowserReadOutput", "BrowserReleaseOutput", "BrowserListDownloads",

@@ -15,6 +15,7 @@
 //! invocation inside that block is still unexpanded when it does. Writing them
 //! out is what lets the macro see them.
 
+mod accessibility;
 mod browser;
 mod service;
 
@@ -73,6 +74,7 @@ pub(crate) struct DesktopService {
     /// The configured `browser` settings, filled into a
     /// `BrowserOpenSession` wherever the caller left them unset.
     browser_defaults: crate::tinybus_module::config::BrowserDefaults,
+    accessibility: Arc<accessibility::Access>,
 }
 
 #[tinybus::interface(name = "ai.tinyhumans.tinycomputer.Desktop")]
@@ -476,6 +478,124 @@ impl DesktopService {
     /// Reports, and optionally prompts for, the permissions automation needs.
     async fn permissions(&self, request: PermissionsRequest) -> TinyBusResult<DesktopResponse> {
         self.run(move |desktop| desktop.permissions(request)).await
+    }
+
+    /// Native accessibility permissions through module-owned resources.
+    async fn accessibility_permissions(&self) -> TinyBusResult<DesktopResponse> {
+        accessibility::run(
+            Arc::clone(&self.accessibility),
+            "accessibility-permissions",
+            move |a| Ok(a.permissions()),
+        )
+        .await
+    }
+
+    /// Native accessibility request permission through module-owned resources.
+    async fn accessibility_request_permission(
+        &self,
+        kind: tinycomputer_bus::accessibility::PermissionKind,
+    ) -> TinyBusResult<DesktopResponse> {
+        accessibility::run(
+            Arc::clone(&self.accessibility),
+            "accessibility-request-permission",
+            move |a| Ok(a.request_permission(kind)),
+        )
+        .await
+    }
+
+    /// Native accessibility focus through module-owned resources.
+    #[tinybus(confidential)]
+    async fn accessibility_focus(
+        &self,
+        query: tinycomputer_bus::accessibility::FocusQuery,
+    ) -> TinyBusResult<DesktopResponse> {
+        accessibility::run(
+            Arc::clone(&self.accessibility),
+            "accessibility-focus",
+            move |a| a.focus(query),
+        )
+        .await
+    }
+
+    /// Native accessibility validate target through module-owned resources.
+    #[tinybus(confidential)]
+    async fn accessibility_validate_target(
+        &self,
+        target: tinycomputer_bus::accessibility::FocusTarget,
+    ) -> TinyBusResult<DesktopResponse> {
+        accessibility::run(
+            Arc::clone(&self.accessibility),
+            "accessibility-validate-target",
+            move |a| a.validate(&target),
+        )
+        .await
+    }
+
+    /// Native accessibility paste through module-owned resources.
+    #[tinybus(confidential)]
+    async fn accessibility_paste(
+        &self,
+        request: tinycomputer_bus::accessibility::PasteRequest,
+    ) -> TinyBusResult<DesktopResponse> {
+        accessibility::run(
+            Arc::clone(&self.accessibility),
+            "accessibility-paste",
+            move |a| a.paste(request),
+        )
+        .await
+    }
+
+    /// Native globe start through module-owned resources.
+    async fn globe_start(&self) -> TinyBusResult<DesktopResponse> {
+        accessibility::run(Arc::clone(&self.accessibility), "globe-start", move |a| {
+            a.start()
+        })
+        .await
+    }
+
+    /// Native globe poll through module-owned resources.
+    async fn globe_poll(
+        &self,
+        handle: tinycomputer_bus::accessibility::GlobeHandle,
+    ) -> TinyBusResult<DesktopResponse> {
+        accessibility::run(Arc::clone(&self.accessibility), "globe-poll", move |a| {
+            a.poll(&handle)
+        })
+        .await
+    }
+
+    /// Read a replayable acknowledged native Globe batch.
+    async fn globe_read(
+        &self,
+        request: tinycomputer_bus::accessibility::GlobeRead,
+    ) -> TinyBusResult<DesktopResponse> {
+        accessibility::run(Arc::clone(&self.accessibility), "globe-read", move |a| {
+            a.read(&request)
+        })
+        .await
+    }
+
+    /// Terminal joined listener cleanup before unloading the module.
+    async fn globe_shutdown(&self) -> TinyBusResult<DesktopResponse> {
+        // Close admission before scheduling the blocking cleanup barrier.
+        self.accessibility.close_admission();
+        accessibility::run(
+            Arc::clone(&self.accessibility),
+            "globe-shutdown",
+            accessibility::Access::shutdown,
+        )
+        .await
+    }
+
+    /// Native globe stop through module-owned resources.
+    async fn globe_stop(
+        &self,
+        handle: tinycomputer_bus::accessibility::GlobeHandle,
+    ) -> TinyBusResult<DesktopResponse> {
+        accessibility::run(Arc::clone(&self.accessibility), "globe-stop", move |a| {
+            a.stop(&handle)
+        })
+        .await
     }
 
     /// Launches or attaches a browser and returns its session.

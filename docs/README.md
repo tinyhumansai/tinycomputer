@@ -61,6 +61,8 @@ architecture, every decision loop and threshold, every Jev question, the task
 controller, the debug journal, specifications, implementation plans, decision
 records, and recorded evaluations. Read those when you're changing the code.
 
+[Globe lease replay and joined native shutdown](technical/specs/globe-replay.md) specifies the reliable macOS input composition contract.
+
 ## Conventions
 
 - Keep every Markdown file at 500 lines or fewer. Split a topic that outgrows

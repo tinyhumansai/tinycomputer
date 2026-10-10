@@ -18,14 +18,15 @@ engine's argument types, the permission preflight, and the bus surface.
 ### Members
 
 - The interface `ai.tinyhumans.tinycomputer.Desktop` is served at
-  `/ai/tinyhumans/tinycomputer/Desktop` with exactly eighty members,
+  `/ai/tinyhumans/tinycomputer/Desktop` with exactly eighty-eight members,
   enumerated in dispatch order by `tinycomputer_bus::names::METHODS`, and
   catalogued — family, one-line summary, confidentiality — by
   `tinycomputer_bus::catalogue::MEMBERS`, which `Describe` serves as
   `Capabilities.catalogue` (2.6).
 - Every member takes at most one request payload. Members taking no argument:
   `ListDisplays`, `ClipboardClear`, `FlowGuide`, `Version`, `Status`,
-  `Describe`, `ListTasks`, `BrowserListSessions`.
+  `Describe`, `ListTasks`, `BrowserListSessions`, `AccessibilityPermissions`,
+  `GlobeStart`.
 - Every desktop and agentic member returns a `DesktopResponse`. The eight task
   members (`Describe`, `PlanTask`, `StartTask`, `AwaitTask`, `ContinueTask`,
   `CancelTask`, `TaskReport`, `ListTasks`, contract 1.7; briefs, votes,
@@ -181,3 +182,30 @@ engine's argument types, the permission preflight, and the bus surface.
   dynamic loader and calls `Version` before a release archive is accepted.
 - The generated dispatch table and the embedded module manifest are both
   asserted against `tinycomputer_bus::names::METHODS`.
+
+## Native accessibility (2.11)
+
+The eight members in `tinycomputer_bus::names::accessibility::METHODS` cover
+permission observation/request, focused text context, captured-target validation,
+validated paste, and Globe listener start/poll/stop. Their payloads live in
+`tinycomputer_bus::accessibility`; each returns `DesktopResponse`. Focus,
+validation and paste require confidential transport. Paste validates the captured
+application, role and bounds before insertion. A started listener returns an
+opaque module-owned handle; poll drains the bounded native event queue, stop
+releases the handle, and module shutdown stops an abandoned listener. Unknown or
+released handles return `UNKNOWN_LISTENER`. No existing member changes arity.
+
+Hosts may adopt these operations only after pinning a released contract-2.11
+artifact with its verified digest. Native libraries belong to that artifact,
+not to the bus crate or consuming host.
+
+## Reliable native Globe input (2.12)
+
+GlobeRead takes a GlobeRead request and returns a retained typed GlobeBatch inside
+the existing DesktopResponse envelope. Identical reads replay the snapshot until
+acknowledged; repeated acknowledgments cannot skip the next snapshot. Native
+queue loss and legacy Poll gaps are explicit overflow/reset facts. GlobeShutdown
+is a zero-argument terminal joined native cleanup barrier, including pending
+startup/compiler work; hosts must await success before ABI unload. Stop remains
+per-lease/reusable and retains ownership on native cleanup faults. Existing
+member arities and legacy poll JSON are unchanged. See [Globe replay](globe-replay.md).

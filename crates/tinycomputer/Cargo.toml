@@ -18,6 +18,10 @@ publish = false
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]
+# Native accessibility executes only in this compiled module.
+tinycomputer-accessibility = { workspace = true, features = ["paste", "microphone-probe"] }
+# Opaque listener lease identifiers require OS entropy.
+getrandom = "0.4"
 # The wire contract: member names, request payloads, the response envelope, and
 # the contract version. Re-exported wholesale from `src/lib.rs` so a consumer
 # takes one dependency rather than two, and so `tinycomputer::SnapshotRequest`

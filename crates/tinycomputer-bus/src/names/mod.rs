@@ -208,6 +208,43 @@ pub mod methods {
     pub const PERMISSIONS: &str = "Permissions";
 }
 
+/// Native accessibility and listener member names.
+pub mod accessibility {
+    /// Reads native accessibility, input-monitoring and microphone permission states.
+    pub const ACCESSIBILITY_PERMISSIONS: &str = "AccessibilityPermissions";
+    /// Requests one native permission and returns current states.
+    pub const ACCESSIBILITY_REQUEST_PERMISSION: &str = "AccessibilityRequestPermission";
+    /// Reads the focused text context inside the computer module.
+    pub const ACCESSIBILITY_FOCUS: &str = "AccessibilityFocus";
+    /// Validates the captured application, role and bounds.
+    pub const ACCESSIBILITY_VALIDATE_TARGET: &str = "AccessibilityValidateTarget";
+    /// Validates captured focus and inserts authorized text.
+    pub const ACCESSIBILITY_PASTE: &str = "AccessibilityPaste";
+    /// Starts the module-owned Globe listener and returns its lease.
+    pub const GLOBE_START: &str = "GlobeStart";
+    /// Drains a bounded ordered batch for a Globe listener lease.
+    pub const GLOBE_POLL: &str = "GlobePoll";
+    /// Stops and releases a Globe listener lease.
+    pub const GLOBE_STOP: &str = "GlobeStop";
+    /// Replayable acknowledged Globe batch.
+    pub const GLOBE_READ: &str = "GlobeRead";
+    /// Terminal listener teardown before module unload.
+    pub const GLOBE_SHUTDOWN: &str = "GlobeShutdown";
+    /// Native members served by the accessibility bridge, in dispatch order.
+    pub const METHODS: &[&str] = &[
+        ACCESSIBILITY_PERMISSIONS,
+        ACCESSIBILITY_REQUEST_PERMISSION,
+        ACCESSIBILITY_FOCUS,
+        ACCESSIBILITY_VALIDATE_TARGET,
+        ACCESSIBILITY_PASTE,
+        GLOBE_START,
+        GLOBE_POLL,
+        GLOBE_READ,
+        GLOBE_SHUTDOWN,
+        GLOBE_STOP,
+    ];
+}
+
 /// Every member of [`INTERFACE`], in the order the interface dispatches them.
 ///
 /// `crates/tinycomputer` asserts both its dispatch table and its declared
@@ -283,6 +320,16 @@ pub const METHODS: &[&str] = &[
     methods::VERSION,
     methods::STATUS,
     methods::PERMISSIONS,
+    accessibility::ACCESSIBILITY_PERMISSIONS,
+    accessibility::ACCESSIBILITY_REQUEST_PERMISSION,
+    accessibility::ACCESSIBILITY_FOCUS,
+    accessibility::ACCESSIBILITY_VALIDATE_TARGET,
+    accessibility::ACCESSIBILITY_PASTE,
+    accessibility::GLOBE_START,
+    accessibility::GLOBE_POLL,
+    accessibility::GLOBE_READ,
+    accessibility::GLOBE_SHUTDOWN,
+    accessibility::GLOBE_STOP,
     crate::browser::names::methods::OPEN_SESSION,
     crate::browser::names::methods::CLOSE_SESSION,
     crate::browser::names::methods::LIST_SESSIONS,

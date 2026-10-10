@@ -17,5 +17,7 @@ mod tasks_tests;
 mod wire_tests;
 
 fn service() -> DesktopService {
-    DesktopService::from_config(&json!({})).expect("an empty configuration is valid")
+    DesktopService::from_config(&json!({}))
+        .expect("an empty configuration is valid")
+        .with_native_fixture()
 }

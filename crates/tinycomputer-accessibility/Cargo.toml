@@ -24,6 +24,10 @@ microphone-probe = ["dep:cpal"]
 paste = ["dep:arboard", "dep:enigo"]
 
 [dependencies]
+# Joined native helper/compiler process groups; no async runtime or host behavior.
+command-group = { version = "5", default-features = false }
+# Pure vocabulary shared with consumers of the compiled computer module.
+tinycomputer-bus = { workspace = true }
 # Permission state and focus context cross into hosts as JSON.
 serde = { workspace = true }
 # The Swift helper speaks one JSON object per line over stdin/stdout.
@@ -67,3 +71,7 @@ must_use_candidate = "warn"
 [lints.rustdoc]
 broken_intra_doc_links = "warn"
 private_intra_doc_links = "warn"
+
+[dev-dependencies]
+# Local process readiness fixtures, never devices or real compilers.
+tempfile = "3"

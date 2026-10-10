@@ -6,7 +6,7 @@ v1. Install only the archive matching the host operating system and
 architecture.
 
 The module claims `ai.tinyhumans.tinycomputer.Desktop`, serves the object at
-`/ai/tinyhumans/tinycomputer/Desktop`, and provides eighty members:
+`/ai/tinyhumans/tinycomputer/Desktop`, and provides ninety members:
 
 - 54 desktop primitives: accessibility-tree observation, ref-addressed
   interaction, synthesized keyboard and mouse input, application and window
@@ -22,6 +22,11 @@ The module claims `ai.tinyhumans.tinycomputer.Desktop`, serves the object at
   `BrowserEvaluate`, `BrowserScreenshot`, `BrowserReadOutput`, and the
   session, output, and download members around them. They share one browser
   with the tasks, so a task's session and screenshots are reachable too.
+
+Ten native accessibility members cover permission/focus/paste and Globe leases,
+including reliable GlobeRead and joined terminal GlobeShutdown. Existing members
+retain their arities. Shutdown must succeed before unloading; sign-out can Stop a
+lease and keep the module available for reconnection.
 
 Every member takes one request payload, or none, and returns a structured
 reply carrying either the data or an error with its code, suggestion, and

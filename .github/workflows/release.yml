@@ -263,6 +263,10 @@ jobs:
             exit 1
           fi
 
+      - name: Install Linux audio and input development libraries
+        if: ${{ runner.os == 'Linux' }}
+        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev libxdo-dev
+
       - name: Build installable module
         run: cargo build --locked --release --lib --package ${{ env.RELEASE_PACKAGE }}
 
@@ -462,11 +466,11 @@ jobs:
     steps:
       - name: Install Fedora build tools
         if: ${{ matrix.family == 'fedora' }}
-        run: dnf install -y gcc git gzip make perl tar
+        run: dnf install -y gcc git gzip make perl tar pkgconf-pkg-config alsa-lib-devel libxdo-devel
 
       - name: Install Arch Linux build tools
         if: ${{ matrix.family == 'archlinux' }}
-        run: pacman -Syu --noconfirm base-devel git
+        run: pacman -Syu --noconfirm base-devel git alsa-lib xdotool
 
       - uses: actions/checkout@v7
         with:

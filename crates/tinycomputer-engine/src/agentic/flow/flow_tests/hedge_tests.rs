@@ -126,7 +126,7 @@ async fn a_failed_copy_gives_way_and_two_failures_fail() {
     let started = tokio::time::Instant::now();
     let answer = hedged(&runtime, "1", &request(1_000)).await.unwrap();
     assert_eq!(answer.response.model, "call 0");
-    assert_eq!(started.elapsed(), Duration::from_millis(6_000));
+    assert_eq!(started.elapsed(), Duration::from_secs(6));
 
     // The first fails after its copy was sent; the copy's answer counts.
     let (runtime, _) = paced(&[(4_500, true), (1_000, false)]);
@@ -150,7 +150,7 @@ async fn a_sage_framing_gets_no_copy() {
         (answer.response.model.as_str(), answer.attempts),
         ("call 0", 1)
     );
-    assert_eq!(started.elapsed(), Duration::from_millis(6_000));
+    assert_eq!(started.elapsed(), Duration::from_secs(6));
     assert_eq!(*paced.calls.lock().unwrap(), 1);
 }
 

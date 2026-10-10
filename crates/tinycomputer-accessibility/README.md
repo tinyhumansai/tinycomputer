@@ -44,3 +44,15 @@ The workspace forbids `unsafe`; this crate lowers it to `deny` and only
 The macOS paths (FFI, helper process) cannot run in Linux CI: tests cover the
 pure logic and the non-macOS fallbacks, and macOS code is checked with
 `cargo check --target aarch64-apple-darwin`.
+
+Shared permission, focus, Globe and error types are re-exported from
+`tinycomputer-bus::accessibility`. Hosts using the compiled module take the
+pure bus crate; native operations remain in this implementation.
+
+Globe helpers use owned process groups and reader threads. Successful Stop joins
+native cleanup; failed reaping retains ownership for public retry. Native event
+framing is bounded to 128 bytes and stderr uses an 8 KiB discard buffer. Compilation
+uses an owned group with a 30-second deadline and terminal cancellation predicate.
+The module's GlobeShutdown is the required fallible barrier before unloading.
+Compatibility Start/Poll/Stop library paths retain their platform/status wires;
+module recovery/start paths pass the terminal predicate through native work.
