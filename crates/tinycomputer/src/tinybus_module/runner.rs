@@ -138,6 +138,29 @@ impl FlowRunner for WorkspaceRunner {
         ))
     }
 
+    fn page_origin(&self, task: &TaskId) -> tinycomputer_engine::PageOriginFuture {
+        let session = self.workspaces.lock().ok().and_then(|workspaces| {
+            workspaces
+                .get(task)
+                .and_then(|(_, browser)| browser.as_ref())
+                .and_then(BrowserSurface::session)
+        });
+        let Some(session) = session else {
+            return Box::pin(async { None });
+        };
+        let browser = self.browser.clone();
+        Box::pin(async move {
+            let url = browser
+                .list_sessions()
+                .await
+                .ok()?
+                .into_iter()
+                .find(|info| info.id == session)?
+                .url;
+            secure_page_origin(&url)
+        })
+    }
+
     fn visible_text(&self, task: &TaskId) -> TextFuture {
         let workspace = self.workspace(task, &TaskConstraints::default());
         Box::pin(async move {
@@ -277,6 +300,18 @@ impl FlowRunner for WorkspaceRunner {
             browser.close();
         }
     }
+}
+
+/// Returns only the origin of an HTTPS page, including a non-default port.
+fn secure_page_origin(page_url: &str) -> Option<String> {
+    let url = url::Url::parse(page_url).ok()?;
+    if !matches!(url.scheme(), "http" | "https")
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return None;
+    }
+    Some(format!("{}/", url.origin().ascii_serialization()))
 }
 
 /// The reply an agentic member gives when no Jev runtime was configured.

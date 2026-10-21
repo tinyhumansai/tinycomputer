@@ -343,8 +343,18 @@ async fn the_runner_loads_the_page_a_browser_task_names_in_its_early_browser() {
     };
     let task = TaskId::new("t-1");
     runner.prepare(&task, &browser_only).await;
-    runner.open_page(&task, "https://example.com").await;
-    assert_eq!(navigated(&sent), [json!("https://example.com")]);
+    runner
+        .open_page(&task, "https://example.com:8443/checkout")
+        .await;
+    assert_eq!(
+        runner.page_origin(&task).await.as_deref(),
+        Some("https://example.com:8443/"),
+        "the module runner supplies the current HTTPS origin, including its port"
+    );
+    assert_eq!(
+        navigated(&sent),
+        [json!("https://example.com:8443/checkout")]
+    );
     let journal = std::fs::read_to_string(
         scratch
             .join("journal")
@@ -359,6 +369,15 @@ async fn the_runner_loads_the_page_a_browser_task_names_in_its_early_browser() {
         .unwrap();
     assert_eq!(opened["loaded"], true, "{opened}");
     assert!(opened["wall_ms"].is_u64(), "{opened}");
+
+    runner
+        .open_page(&task, "http://example.com:8080/local-checkout")
+        .await;
+    assert_eq!(
+        runner.page_origin(&task).await.as_deref(),
+        Some("http://example.com:8080/"),
+        "the module runner keeps valid local HTTP origins and their port"
+    );
 
     // A task whose browser was never made ready loads nothing, nor does one
     // once prelaunch is off.

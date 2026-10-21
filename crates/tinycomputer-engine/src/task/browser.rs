@@ -143,11 +143,7 @@ impl FlowRunner for BrowserRunner {
                 .into_iter()
                 .find(|info| info.id == session)?
                 .url;
-            let url = url::Url::parse(&url).ok()?;
-            if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
-                return None;
-            }
-            Some(format!("https://{}/", url.host_str()?))
+            secure_page_origin(&url)
         })
     }
 
@@ -289,6 +285,18 @@ impl FlowRunner for BrowserRunner {
             .as_ref()
             .map_or_else(|| text.to_owned(), |host| host.redact(&task.0, text))
     }
+}
+
+/// Returns only the origin of an HTTPS page, including a non-default port.
+fn secure_page_origin(page_url: &str) -> Option<String> {
+    let url = url::Url::parse(page_url).ok()?;
+    if !matches!(url.scheme(), "http" | "https")
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return None;
+    }
+    Some(format!("{}/", url.origin().ascii_serialization()))
 }
 
 impl BrowserRunner {

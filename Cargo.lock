@@ -2774,6 +2774,7 @@ dependencies = [
  "tinycomputer-desktop",
  "tinycomputer-engine",
  "tokio",
+ "url",
 ]
 
 [[package]]

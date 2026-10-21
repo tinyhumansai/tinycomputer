@@ -44,6 +44,7 @@ tinybus-module = { workspace = true }
 # Command replies are `serde_json::Value` the whole way through.
 serde_json = { workspace = true }
 serde = { workspace = true }
+url = { workspace = true }
 # `spawn_blocking`, so a tree walk that takes a second does not stall the
 # connection's dispatch task for every other caller. See `src/tinybus_module/`.
 tokio = { workspace = true }

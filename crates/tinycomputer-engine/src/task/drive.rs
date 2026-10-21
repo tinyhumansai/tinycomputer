@@ -552,11 +552,14 @@ impl Drop for PlanningDebit {
     }
 }
 
-fn reopens_origin(flow: &tinycomputer_bus::Flow, origin: &str) -> bool {
+pub(super) fn reopens_origin(flow: &tinycomputer_bus::Flow, origin: &str) -> bool {
     let Ok(origin) = url::Url::parse(origin) else {
         return true;
     };
-    if origin.scheme() != "https" || !origin.username().is_empty() || origin.password().is_some() {
+    if !matches!(origin.scheme(), "http" | "https")
+        || !origin.username().is_empty()
+        || origin.password().is_some()
+    {
         return true;
     }
     flow.steps.iter().any(|step| {
@@ -566,8 +569,8 @@ fn reopens_origin(flow: &tinycomputer_bus::Flow, origin: &str) -> bool {
         let Ok(url) = url::Url::parse(&url) else {
             return false;
         };
-        url.scheme() == "https"
-            && url.host_str() == origin.host_str()
+        matches!(url.scheme(), "http" | "https")
+            && url.origin() == origin.origin()
             && url.username().is_empty()
             && url.password().is_none()
             && is_front_page(url.path())

@@ -406,6 +406,22 @@ async fn runner_hooks_share_the_task_surface_and_release_its_session()
     Ok(())
 }
 
+#[test]
+fn secure_page_origin_preserves_non_default_ports_and_rejects_credentials() {
+    assert_eq!(
+        super::secure_page_origin("https://shop.test:8443/checkout?step=2#payment"),
+        Some("https://shop.test:8443/".to_owned())
+    );
+    assert_eq!(
+        super::secure_page_origin("http://shop.test:8080/checkout"),
+        Some("http://shop.test:8080/".to_owned())
+    );
+    assert_eq!(
+        super::secure_page_origin("https://user:pass@shop.test:8443/checkout"),
+        None
+    );
+}
+
 #[tokio::test]
 async fn a_runner_with_a_secret_host_does_not_capture_unredacted_pixels()
 -> Result<(), Box<dyn std::error::Error>> {

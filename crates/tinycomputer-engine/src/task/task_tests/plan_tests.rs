@@ -265,6 +265,43 @@ async fn handoff_rejects_a_planner_flow_that_reopens_the_current_shop_homepage()
     assert_eq!(script.requests.lock().unwrap().len(), 1);
 }
 
+#[test]
+fn handoff_reopen_guard_compares_the_current_origin_port() {
+    let same_port = flow(json!({
+        "app": "browser",
+        "steps": [{"browse": "https://shop.example:8443/"}]
+    }));
+    let default_port = flow(json!({
+        "app": "browser",
+        "steps": [{"browse": "https://shop.example/"}]
+    }));
+    let same_http_port = flow(json!({
+        "app": "browser",
+        "steps": [{"browse": "http://shop.example:8080/"}]
+    }));
+    let other_http_port = flow(json!({
+        "app": "browser",
+        "steps": [{"browse": "http://shop.example/"}]
+    }));
+
+    assert!(super::super::drive::reopens_origin(
+        &same_port,
+        "https://shop.example:8443/checkout"
+    ));
+    assert!(
+        !super::super::drive::reopens_origin(&default_port, "https://shop.example:8443/checkout"),
+        "another port is a different origin"
+    );
+    assert!(super::super::drive::reopens_origin(
+        &same_http_port,
+        "http://shop.example:8080/checkout"
+    ));
+    assert!(
+        !super::super::drive::reopens_origin(&other_http_port, "http://shop.example:8080/checkout"),
+        "HTTP ports are part of the browser origin too"
+    );
+}
+
 #[tokio::test]
 async fn a_paused_prefix_keeps_its_handoff_phase_across_export_and_import() {
     let prefix = flow(json!({
