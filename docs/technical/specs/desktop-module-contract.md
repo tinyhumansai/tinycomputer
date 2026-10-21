@@ -250,3 +250,22 @@ identifies a host-owned compatible route in the non-secret model summary; the
 module's private TinyBus model configuration still accepts only its fixed
 provider endpoints. Rust embedding hosts may supply arbitrary model and Jev
 endpoints directly.
+
+## Host-held continuation fact handles (2.23)
+
+Contract 2.23 adds optional `ContinueTask.fact_handles`, keyed by fact name.
+Each entry carries only the host's opaque handle, a safe mask, and a kind; the
+secret value remains with the host and is resolved only when the task types it.
+A name cannot appear in both `inputs` and `fact_handles`. Requests that omit the
+field, and continuations that answer ordinary values, retain their existing
+wire behavior. Modules without a configured `SecretHost` refuse to type a
+host-held value.
+
+## Same-task flow-to-planner handoff (2.24)
+
+Contract 2.24 adds the optional boolean `StartTask.handoff_to_planner`, default
+`false`. When enabled with both a supplied `flow` and non-empty `task` goal,
+the task continues after that flow completes by planning the goal from the
+current surface. The same task ID and browser session are retained, and the
+named start page is not reopened. Without the flag, or when it is `false`, the
+existing flow-only and task-only start behavior is unchanged.
