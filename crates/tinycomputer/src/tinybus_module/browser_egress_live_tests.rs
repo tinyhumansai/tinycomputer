@@ -128,7 +128,12 @@ async fn serve_fixture(
     }
 }
 
-async fn serve_redirect_fixture(listener: tokio::net::TcpListener, location: String) {
+async fn serve_redirect_fixture(
+    listener: tokio::net::TcpListener,
+    location: String,
+    resolved_address: Arc<Mutex<String>>,
+    denied_address: String,
+) {
     let (mut stream, _) = tokio::time::timeout(Duration::from_secs(30), listener.accept())
         .await
         .expect("authorized Chromium socket arrives before the deadline")
@@ -136,6 +141,7 @@ async fn serve_redirect_fixture(listener: tokio::net::TcpListener, location: Str
     let mut request = [0_u8; 4096];
     let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut request).await;
     assert!(String::from_utf8_lossy(&request).contains("GET /redirect"));
+    *resolved_address.lock().unwrap() = denied_address;
     let response = format!(
         "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
     );
@@ -309,11 +315,14 @@ async fn live_chromium_module_authorizes_redirect_hops_before_dialing() -> tinyb
     let allowed_port = allowed_listener.local_addr()?.port();
     let denied_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let denied_address = denied_listener.local_addr()?.to_string();
+    let resolved_address = Arc::new(Mutex::new(allowed_address.clone()));
     let denied_port = denied_listener.local_addr()?.port();
-    let redirect_location = format!("http://private.fixture.test:{denied_port}/private");
+    let redirect_location = format!("http://{denied_address}/private");
     let allowed_server = tokio::spawn(serve_redirect_fixture(
         allowed_listener,
         redirect_location.clone(),
+        resolved_address.clone(),
+        denied_address.clone(),
     ));
 
     let bus = MemoryBus::new();
@@ -329,7 +338,7 @@ async fn live_chromium_module_authorizes_redirect_hops_before_dialing() -> tinyb
                 allowed_address: allowed_address.clone(),
                 grant_generation: None,
                 authorize_delay: Duration::ZERO,
-                resolved_address: Arc::new(Mutex::new(allowed_address.clone())),
+                resolved_address: resolved_address.clone(),
                 observations: observations.clone(),
             },
         )
@@ -376,10 +385,16 @@ async fn live_chromium_module_authorizes_redirect_hops_before_dialing() -> tinyb
     assert!(
         calls.iter().any(|call| {
             call.starts_with(&format!(
-                "authorize:redirect-policy:41:private.fixture.test:{denied_port}"
+                "authorize:redirect-policy:41:127.0.0.1:{denied_port}"
             ))
         }),
         "Chromium's redirect hop did not go through host authorization: {calls:?}"
+    );
+    assert!(
+        calls
+            .iter()
+            .any(|call| call == &format!("resolve:127.0.0.1:{denied_port}:{denied_address}")),
+        "the redirect fixture did not map the denied IP to its listener: {calls:?}"
     );
     assert!(
         !calls
