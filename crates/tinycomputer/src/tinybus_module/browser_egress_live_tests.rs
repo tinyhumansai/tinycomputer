@@ -138,8 +138,21 @@ async fn serve_redirect_fixture(
         .await
         .expect("authorized Chromium socket arrives before the deadline")
         .expect("fixture listener accepts the authorized socket");
-    let mut request = [0_u8; 4096];
-    let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut request).await;
+    let mut request = Vec::new();
+    let mut chunk = [0_u8; 1024];
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+            let read = tokio::io::AsyncReadExt::read(&mut stream, &mut chunk)
+                .await
+                .expect("Chromium request is readable");
+            if read == 0 {
+                break;
+            }
+            request.extend_from_slice(&chunk[..read]);
+        }
+    })
+    .await
+    .expect("Chromium sends its full request before the deadline");
     assert!(String::from_utf8_lossy(&request).contains("GET /redirect"));
     *resolved_address.lock().unwrap() = denied_address;
     let response = format!(
