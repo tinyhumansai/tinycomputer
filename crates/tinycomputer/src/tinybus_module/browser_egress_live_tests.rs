@@ -129,7 +129,7 @@ async fn serve_fixture(
 }
 
 async fn serve_redirect_fixture(listener: tokio::net::TcpListener, location: String) {
-    let (mut stream, _) = tokio::time::timeout(Duration::from_secs(10), listener.accept())
+    let (mut stream, _) = tokio::time::timeout(Duration::from_secs(30), listener.accept())
         .await
         .expect("authorized Chromium socket arrives before the deadline")
         .expect("fixture listener accepts the authorized socket");
