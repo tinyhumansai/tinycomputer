@@ -359,13 +359,18 @@ async fn live_chromium_module_authorizes_redirect_hops_before_dialing() -> tinyb
         .await?;
     let session = successful_data(&opened)["id"].clone();
     let url = format!("http://fixture.test:{allowed_port}/redirect");
-    let _navigated: DesktopResponse = proxy
+    let navigated: DesktopResponse = proxy
         .call(
             browser_names::methods::NAVIGATE,
             (serde_json::json!({"session": session, "url": url}),),
         )
         .await?;
-    allowed_server.await.expect("redirect server completes");
+    if let Err(error) = allowed_server.await {
+        panic!(
+            "redirect server did not receive the initial navigation: {error}; navigation={navigated:?}; egress observations={:?}",
+            observations.lock().unwrap()
+        );
+    }
 
     let calls = observations.lock().unwrap();
     assert!(
