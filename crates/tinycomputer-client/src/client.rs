@@ -7,7 +7,6 @@ use tinybus::{
     Proxy,
     module::{ConfigFingerprint, ModuleCallError, ReconfigurableModule},
 };
-use tokio::sync::{RwLock, RwLockReadGuard};
 use tinycomputer_bus::{
     DesktopResponse,
     agent::{AgentResponse, Capabilities, names as agent_names},
@@ -15,6 +14,7 @@ use tinycomputer_bus::{
     config::ComputerConfig,
     names,
 };
+use tokio::sync::{RwLock, RwLockReadGuard};
 
 use crate::ClientError;
 
@@ -173,8 +173,8 @@ impl ComputerClient {
         config: &ComputerConfig,
         timeout: Option<Duration>,
     ) -> Result<(RwLockReadGuard<'_, Option<ConfigFingerprint>>, Proxy), ClientError> {
-        let wanted =
-            ConfigFingerprint::of(config).map_err(|_| ClientError::from(ModuleCallError::ModuleFault))?;
+        let wanted = ConfigFingerprint::of(config)
+            .map_err(|_| ClientError::from(ModuleCallError::ModuleFault))?;
         let mut guard = self.active.read().await;
         if guard.as_ref() != Some(&wanted) {
             drop(guard);
