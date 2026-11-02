@@ -81,6 +81,10 @@ fn site_urls_keep_url_parser_idna_and_ip_address_behavior() {
         Some("xn--bcher-kva.example")
     );
     assert_eq!(site_of("https://[::1]/"), None);
+    assert_eq!(site_of("https://127.0.0.1/"), None);
+    assert_eq!(site_of("http://10.0.0.1:8080/login"), None);
+    assert_eq!(site_named("192.168.1.1"), None);
+    assert_eq!(site_named("123.example").as_deref(), Some("123.example"));
     assert_eq!(site_named("bücher.example"), None);
 }
 

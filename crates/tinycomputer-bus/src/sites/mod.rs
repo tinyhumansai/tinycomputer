@@ -16,7 +16,11 @@ pub fn site_named(host: &str) -> Option<String> {
         && !host.contains("..")
         && host.bytes().all(|byte| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'-')
-        });
+        })
+        // An IPv4 literal is an address, not a site: no TLD is all digits.
+        && !host
+            .split('.')
+            .all(|label| label.bytes().all(|byte| byte.is_ascii_digit()));
     plain.then(|| host.to_owned())
 }
 
