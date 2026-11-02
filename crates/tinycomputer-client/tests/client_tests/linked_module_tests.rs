@@ -337,6 +337,10 @@ async fn attested_client_keeps_configuration_exclusive_through_member_completion
     });
     entered_rx.await?;
 
+    // A call with the same configuration runs alongside the one in flight.
+    let alongside = fixture.client.describe(&first_config).await?;
+    assert!(alongside.jev_configured);
+
     let second_client = fixture.client.clone();
     let next_config = second_config.clone();
     let (started_tx, started_rx) = tokio::sync::oneshot::channel();

@@ -14,6 +14,8 @@ serde_json.workspace = true
 thiserror.workspace = true
 tinybus.workspace = true
 tinycomputer-bus.workspace = true
+# Calls sharing a configuration hold a read lock; changing it takes the write lock.
+tokio = { workspace = true, features = ["sync"] }
 
 [dev-dependencies]
 # The in-memory service fixtures implement TinyBus' asynchronous interface.

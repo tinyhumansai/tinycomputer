@@ -5,8 +5,9 @@ use std::{sync::Arc, time::Duration};
 use serde::{Serialize, de::DeserializeOwned};
 use tinybus::{
     Proxy,
-    module::{ReconfigurableModule, ReconfigureGuard},
+    module::{ConfigFingerprint, ModuleCallError, ReconfigurableModule},
 };
+use tokio::sync::{RwLock, RwLockReadGuard};
 use tinycomputer_bus::{
     DesktopResponse,
     agent::{AgentResponse, Capabilities, names as agent_names},
@@ -25,12 +26,15 @@ pub const TASK_CALL_TIMEOUT: Duration = Duration::from_secs(75);
 
 /// A typed caller for the shared desktop, flow, browser, and task interface.
 ///
-/// The module coordinator serializes configuration transitions. Each call
-/// keeps its exclusive guard until the bus reply has been decoded, so another
-/// caller cannot replace `ComputerConfig` during an in-flight request.
+/// Calls with the same `ComputerConfig` run concurrently. A call with a
+/// different configuration waits until every in-flight call has finished, so
+/// no caller's configuration is replaced while its request is in flight, and
+/// a long `RunGoal` or task poll does not block `CancelTask` or `Describe`.
 #[derive(Clone)]
 pub struct ComputerClient {
     module: Arc<ReconfigurableModule>,
+    /// The configuration in-flight calls hold, shared by every clone.
+    active: Arc<RwLock<Option<ConfigFingerprint>>>,
 }
 
 impl std::fmt::Debug for ComputerClient {
@@ -47,6 +51,7 @@ impl ComputerClient {
     pub fn new(module: ReconfigurableModule) -> Self {
         Self {
             module: Arc::new(module),
+            active: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -167,9 +172,19 @@ impl ComputerClient {
         &self,
         config: &ComputerConfig,
         timeout: Option<Duration>,
-    ) -> Result<(ReconfigureGuard<'_>, Proxy), ClientError> {
-        let mut guard = self.module.exclusive().await;
-        let proxy = guard.proxy(config).await?;
+    ) -> Result<(RwLockReadGuard<'_, Option<ConfigFingerprint>>, Proxy), ClientError> {
+        let wanted =
+            ConfigFingerprint::of(config).map_err(|_| ClientError::from(ModuleCallError::ModuleFault))?;
+        let mut guard = self.active.read().await;
+        if guard.as_ref() != Some(&wanted) {
+            drop(guard);
+            // Exclusive only while no call is in flight; then shared again so
+            // later calls with this configuration run alongside.
+            let mut switching = self.active.write().await;
+            *switching = Some(wanted);
+            guard = switching.downgrade();
+        }
+        let proxy = self.module.proxy(config).await?;
         let proxy = timeout.map_or(proxy.clone(), |duration| proxy.with_timeout(duration));
         Ok((guard, proxy))
     }
