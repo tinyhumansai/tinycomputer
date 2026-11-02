@@ -1,7 +1,7 @@
 //! Tests for browser launch command rewriting and policy refusal.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use super::super::enforce_launch_with_config;
+use super::super::{AMBIENT_BROWSER_ENV, enforce_launch_with_config};
 use serde_json::json;
 
 #[test]
@@ -58,4 +58,20 @@ fn enforced_launch_refuses_external_cdp_and_caller_flags() {
         true,
     );
     assert!(ambient.is_err());
+}
+
+/// agent-browser applies these after the enforced proxy arguments, so an
+/// ambient value must refuse the launch rather than reach the browser.
+#[test]
+fn ambient_plugins_extensions_args_and_init_scripts_refuse_the_launch() {
+    for name in [
+        "AGENT_BROWSER_PLUGINS",
+        "AGENT_BROWSER_EXTENSIONS",
+        "AGENT_BROWSER_ARGS",
+        "AGENT_BROWSER_INIT_SCRIPTS",
+        "AGENT_BROWSER_PROXY",
+        "AGENT_BROWSER_CDP",
+    ] {
+        assert!(AMBIENT_BROWSER_ENV.contains(&name), "{name}");
+    }
 }

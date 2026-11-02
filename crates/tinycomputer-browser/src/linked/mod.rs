@@ -306,18 +306,32 @@ fn enforce_launch_with_config(
     Ok(command)
 }
 
+/// agent-browser environment variables that can attach another browser or
+/// change how the egress-enforced one launches. Plugins, extensions, extra
+/// arguments and init scripts are applied after this module's proxy and
+/// resolver arguments, so any of them could undo egress enforcement.
+const AMBIENT_BROWSER_ENV: &[&str] = &[
+    "AGENT_BROWSER_CDP",
+    "AGENT_BROWSER_AUTO_CONNECT",
+    "AGENT_BROWSER_PROVIDER",
+    "AGENT_BROWSER_ENGINE",
+    "AGENT_BROWSER_EXECUTABLE_PATH",
+    "AGENT_BROWSER_PROXY",
+    "AGENT_BROWSER_PROXY_BYPASS",
+    "AGENT_BROWSER_PROXY_USERNAME",
+    "AGENT_BROWSER_PROXY_PASSWORD",
+    "AGENT_BROWSER_PROFILE",
+    "AGENT_BROWSER_RESTORE",
+    "AGENT_BROWSER_PLUGINS",
+    "AGENT_BROWSER_EXTENSIONS",
+    "AGENT_BROWSER_ARGS",
+    "AGENT_BROWSER_INIT_SCRIPTS",
+];
+
 fn has_ambient_browser_config() -> bool {
-    std::env::var_os("AGENT_BROWSER_CDP").is_some()
-        || std::env::var_os("AGENT_BROWSER_AUTO_CONNECT").is_some()
-        || std::env::var_os("AGENT_BROWSER_PROVIDER").is_some()
-        || std::env::var_os("AGENT_BROWSER_ENGINE").is_some()
-        || std::env::var_os("AGENT_BROWSER_EXECUTABLE_PATH").is_some()
-        || std::env::var_os("AGENT_BROWSER_PROXY").is_some()
-        || std::env::var_os("AGENT_BROWSER_PROXY_BYPASS").is_some()
-        || std::env::var_os("AGENT_BROWSER_PROXY_USERNAME").is_some()
-        || std::env::var_os("AGENT_BROWSER_PROXY_PASSWORD").is_some()
-        || std::env::var_os("AGENT_BROWSER_PROFILE").is_some()
-        || std::env::var_os("AGENT_BROWSER_RESTORE").is_some()
+    AMBIENT_BROWSER_ENV
+        .iter()
+        .any(|name| std::env::var_os(name).is_some())
 }
 
 #[cfg(test)]
