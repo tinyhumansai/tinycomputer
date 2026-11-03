@@ -4,6 +4,12 @@
 use crate::tinybus_module::DesktopService;
 use serde_json::json;
 use tinycomputer_bus::DesktopResponse;
+use tinycomputer_bus::config::ComputerConfig;
+
+fn browser_defaults(config: serde_json::Value) -> crate::tinybus_module::config::BrowserDefaults {
+    let config: ComputerConfig = serde_json::from_value(config).expect("typed computer config");
+    crate::tinybus_module::config::BrowserDefaults::from_config(config.browser.as_ref(), None)
+}
 
 #[test]
 fn a_malformed_configuration_is_rejected_rather_than_defaulted() {
@@ -11,6 +17,36 @@ fn a_malformed_configuration_is_rejected_rather_than_defaulted() {
         .expect_err("a numeric session id is not a session id");
 
     assert!(error.to_string().contains("session_id"));
+}
+
+#[test]
+fn browser_egress_is_private_strict_and_requires_the_host_connection() {
+    let config = json!({"browser":{"egress":{"policy_id":"policy-secret","generation":7}}});
+    let scope = crate::tinybus_module::config::BrowserDefaults::egress_from_raw(&config)
+        .expect("valid host scope")
+        .expect("scope is present");
+    assert_eq!(scope.policy_id, "policy-secret");
+    assert_eq!(scope.generation, 7);
+    assert!(!format!("{scope:?}").contains("policy-secret"));
+    assert!(DesktopService::from_config(&config).is_err());
+    assert!(crate::tinybus_module::config::BrowserDefaults::egress_from_raw(
+        &json!({"browser":{"args":["--proxy-server=http://untrusted"],"egress":{"policy_id":"p","generation":7}}})
+    )
+    .is_err());
+
+    for egress in [
+        json!({"policy_id":"","generation":7}),
+        json!({"policy_id":"p","generation":0}),
+        json!({"policy_id":"p","generation":7,"extra":true}),
+        json!([]),
+    ] {
+        assert!(
+            crate::tinybus_module::config::BrowserDefaults::egress_from_raw(
+                &json!({"browser":{"egress":egress}})
+            )
+            .is_err()
+        );
+    }
 }
 
 #[test]
@@ -155,42 +191,54 @@ fn the_browser_configuration_is_read_or_refused() {
     use crate::tinybus_module::config::BrowserDefaults;
     use tinycomputer_browser::{Perception, Settle};
 
-    assert_eq!(
-        BrowserDefaults::from_config(&json!({})).unwrap(),
-        BrowserDefaults::default()
-    );
+    assert_eq!(browser_defaults(json!({})), BrowserDefaults::default());
     assert!(DesktopService::from_config(&json!({"browser": {}})).is_ok());
-    let defaults = BrowserDefaults::from_config(&json!({"browser": {
+    let defaults = browser_defaults(json!({"browser": {
         "executable": "/usr/bin/chromium",
         "user_agent": "Mozilla/5.0",
         "args": ["--disable-blink-features=AutomationControlled"],
         "perception": "tree",
         "settle": "steady",
         "prelaunch": false
-    }}))
-    .unwrap();
+    }}));
     assert_eq!(defaults.executable.as_deref(), Some("/usr/bin/chromium"));
     assert_eq!(defaults.user_agent.as_deref(), Some("Mozilla/5.0"));
     assert_eq!(defaults.args.len(), 1);
     assert_eq!(defaults.perception, Perception::Tree);
     assert_eq!(defaults.settle, Settle::Steady);
     assert!(!defaults.prelaunch);
-    let egress = BrowserDefaults::from_config(&json!({"browser": {
+    let egress = BrowserDefaults::egress_from_raw(&json!({"browser": {
         "egress": {"policy_id": "host-policy", "generation": 7}
     }}))
     .unwrap();
-    assert_eq!(egress.egress.as_ref().unwrap().policy_id, "host-policy");
-    assert_eq!(egress.egress.as_ref().unwrap().generation, 7);
+    assert_eq!(egress.as_ref().unwrap().policy_id, "host-policy");
+    assert_eq!(egress.as_ref().unwrap().generation, 7);
+    // The host's own executable loads beside egress; the enforced launcher
+    // runs it under the proxy.
+    let with_executable = json!({"browser": {
+        "executable": "/usr/bin/chromium",
+        "egress": {"policy_id": "host-policy", "generation": 7}
+    }});
+    assert!(
+        BrowserDefaults::egress_from_raw(&with_executable)
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        serde_json::from_value::<ComputerConfig>(json!({"browser": {
+            "executable": "/usr/bin/chromium"
+        }}))
+        .is_ok()
+    );
     // Settling promptly and opening the browser early are on unless turned
     // off.
     let unset = BrowserDefaults::default();
     assert_eq!(unset.settle, Settle::Prompt);
     assert!(unset.prelaunch);
-    let asked = BrowserDefaults::from_config(&json!({"browser": {
+    let asked = browser_defaults(json!({"browser": {
         "settle": "prompt",
         "prelaunch": true
-    }}))
-    .unwrap();
+    }}));
     assert_eq!(asked, unset);
     for invalid in [
         json!({"browser": "chrome"}),
@@ -206,20 +254,21 @@ fn the_browser_configuration_is_read_or_refused() {
         json!({"browser": {"egress": {"policy_id": "p", "generation": 1, "extra": true}}}),
         json!({"browser": {"egress": {"policy_id": "p", "generation": 1}, "args": ["--proxy-server=bad"]}}),
     ] {
-        assert!(BrowserDefaults::from_config(&invalid).is_err(), "{invalid}");
+        assert!(
+            serde_json::from_value::<ComputerConfig>(invalid.clone()).is_err(),
+            "{invalid}"
+        );
         assert!(DesktopService::from_config(&invalid).is_err(), "{invalid}");
     }
 }
 
 #[test]
 fn browser_defaults_fill_only_what_the_caller_left_unset() {
-    use crate::tinybus_module::config::BrowserDefaults;
     use tinycomputer_browser::SessionOptions;
 
-    let defaults = BrowserDefaults::from_config(&json!({"browser": {
+    let defaults = browser_defaults(json!({"browser": {
         "executable": "/opt/chromium", "user_agent": "UA", "args": ["--a"]
-    }}))
-    .unwrap();
+    }}));
     let launched = defaults.apply(SessionOptions::default());
     assert_eq!(launched.executable.as_deref(), Some("/opt/chromium"));
     assert_eq!(launched.user_agent.as_deref(), Some("UA"));

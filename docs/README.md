@@ -39,6 +39,7 @@ One friendly guide per crate and per top-level folder. Start at
 | [`tinycomputer`](crates/tinycomputer/README.md) | the installable module a host loads |
 | [`tinycomputer-engine`](crates/tinycomputer-engine/README.md) | tasks, the planner, rescues, the Jev runtime, and the [flow runtime](crates/tinycomputer-engine/flow/README.md) |
 | [`tinycomputer-bus`](crates/tinycomputer-bus/README.md) | the wire contract: every type that crosses the bus |
+| [`tinycomputer-client`](crates/tinycomputer-client/README.md) | typed host calls, configuration serialization, and confidential delivery |
 | [`tinycomputer-core`](crates/tinycomputer-core/README.md) | the shared screen model, safety rules, facts, and parsers |
 | [`tinycomputer-desktop`](crates/tinycomputer-desktop/README.md) | desktop apps through the accessibility tree |
 | [`tinycomputer-browser`](crates/tinycomputer-browser/README.md) | web pages through Chrome, and sight |

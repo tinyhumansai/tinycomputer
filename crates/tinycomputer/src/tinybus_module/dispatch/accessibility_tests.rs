@@ -4,12 +4,58 @@
     reason = "test assertions require fixture operations to succeed"
 )]
 use super::*;
-#[cfg(not(target_os = "macos"))]
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, atomic::Ordering};
 use tinycomputer_bus::accessibility::PermissionState;
 
+#[cfg(not(target_os = "macos"))]
+use std::sync::atomic::AtomicBool;
+
 use super::fixture::Fixture;
+
+#[test]
+fn thread_restore_worker_reports_completion_and_joins_once() {
+    let (started, observed_start) = std::sync::mpsc::channel();
+    let (release, wait_for_release) = std::sync::mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        started.send(()).expect("signal worker started");
+        wait_for_release.recv().expect("release worker to finish");
+    });
+    observed_start.recv().expect("worker started");
+    let mut worker = ThreadRestoreWorker(Some(thread));
+
+    assert!(
+        !worker.is_finished(),
+        "a completion signal before thread exit is not a finished worker"
+    );
+    release.send(()).expect("release worker to finish");
+    worker.join().expect("join completed worker");
+    assert!(worker.is_finished());
+    worker.join().expect("joining an empty worker is harmless");
+}
+
+#[test]
+fn paste_reaps_finished_restore_workers_before_accepting_another() {
+    use std::sync::atomic::AtomicUsize;
+
+    let fixture = Arc::new(Fixture::default());
+    let joins = Arc::new(AtomicUsize::new(0));
+    let access = Access::new(fixture.clone());
+    let request = PasteRequest {
+        text: "authorized".into(),
+        target: FocusTarget::default(),
+    };
+    *fixture.restore_worker.lock().expect("first restore worker") = Some(joins.clone());
+    access.paste(request.clone()).expect("first paste");
+
+    *fixture.restore_worker.lock().expect("next restore worker") = Some(joins.clone());
+    access.paste(request).expect("second paste after reaping");
+
+    assert_eq!(joins.load(Ordering::SeqCst), 1);
+    access
+        .shutdown()
+        .expect("shutdown joins the remaining worker");
+    assert_eq!(joins.load(Ordering::SeqCst), 2);
+}
 
 #[test]
 fn insertion_validates_the_captured_target_before_touching_the_platform() {

@@ -3,12 +3,14 @@
 
 use std::sync::Arc;
 
+use serde::de::DeserializeOwned;
 use tinybus::{Error as TinyBusError, Result as TinyBusResult};
 use tinycomputer_browser::{AgentBrowser, Browser, EnforcedAgentBrowser};
 use tinycomputer_bus::agent::{
     AgentResponse, ContinueTaskRequest, StartTaskRequest, SurfaceAvailability, SurfaceKind,
     TaskStatus, TaskView,
 };
+use tinycomputer_bus::config::{ComputerConfig, PlannerConfig};
 use tinycomputer_bus::{DesktopResponse, JevConfig};
 use tinycomputer_engine as agentic;
 
@@ -21,6 +23,73 @@ use crate::tinybus_module::site_memory::{SiteLink, SiteMemoryPort, refused_flow}
 use crate::tinybus_module::trace_sink::TraceLink;
 use crate::{Desktop, Result};
 
+/// Decodes the host-owned fields from the public config while leaving the
+/// module's existing desktop and cursor extensions in their original object.
+fn computer_config(config: &serde_json::Value) -> Result<ComputerConfig> {
+    if !config.is_null() && config.as_object().is_none() {
+        return Err(crate::Error::ConfigNotAnObject);
+    }
+    let mut browser_config = config.clone();
+    if let Some(browser) = browser_config
+        .as_object_mut()
+        .and_then(|object| object.get_mut("browser"))
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        browser.remove("egress");
+    }
+    Ok(ComputerConfig {
+        jev: config_field(config, "jev", "a valid Jev configuration object")?,
+        planner: config_field(
+            config,
+            "planner",
+            "a planner configuration object with an api_key and an approved route",
+        )?,
+        browser: config_field(
+            &browser_config,
+            "browser",
+            "an object with optional executable and browser defaults",
+        )?,
+        trace_path: config_field(config, "trace_path", "a string trace path")?,
+    })
+}
+
+fn config_field<T: DeserializeOwned>(
+    config: &serde_json::Value,
+    field: &'static str,
+    expected: &'static str,
+) -> Result<Option<T>> {
+    let Some(value) = config.as_object().and_then(|object| object.get(field)) else {
+        return Ok(None);
+    };
+    if field == "trace_path" && value.is_null() {
+        return Ok(None);
+    }
+    serde_json::from_value(value.clone())
+        .map(Some)
+        .map_err(|_| crate::Error::ConfigFieldType { field, expected })
+}
+
+/// Keeps module-owned desktop options outside the shared host contract.
+/// `session_id`, `trace_strict`, and `headed` belong to `Desktop`; `cursor` is
+/// decoded separately by the existing cursor adapter.
+fn desktop_config(raw: &serde_json::Value, computer: &ComputerConfig) -> serde_json::Value {
+    let mut desktop = serde_json::Map::new();
+    if let Some(options) = raw.as_object() {
+        for key in ["session_id", "trace_strict", "headed"] {
+            if let Some(value) = options.get(key) {
+                desktop.insert(key.to_owned(), value.clone());
+            }
+        }
+    }
+    if let Some(trace_path) = &computer.trace_path {
+        desktop.insert(
+            "trace_path".into(),
+            serde_json::Value::String(trace_path.clone()),
+        );
+    }
+    serde_json::Value::Object(desktop)
+}
+
 impl DesktopService {
     /// Builds the service from the module configuration blob.
     ///
@@ -29,6 +98,12 @@ impl DesktopService {
     /// Propagates whatever [`Desktop::from_config`] rejects.
     #[cfg(test)]
     pub(crate) fn from_config(config: &serde_json::Value) -> Result<Self> {
+        if super::super::config::BrowserDefaults::egress_from_raw(config)?.is_some() {
+            return Err(crate::Error::ConfigFieldType {
+                field: "browser",
+                expected: "a module set up with its authenticated host callback connection",
+            });
+        }
         Self::with_browser(config, Arc::new(Browser::new(Arc::new(AgentBrowser))))
     }
 
@@ -39,12 +114,21 @@ impl DesktopService {
         config: &serde_json::Value,
         connection: tinybus::Connection,
     ) -> TinyBusResult<Self> {
-        let defaults = BrowserDefaults::from_config(config)
+        let egress = BrowserDefaults::egress_from_raw(config)
             .map_err(|error| TinyBusError::failed(error.to_string()))?;
-        let browser = if let Some(egress) = defaults.egress {
-            Arc::new(Browser::new(Arc::new(EnforcedAgentBrowser::new(Arc::new(
-                BusAuthorizer::new(connection.clone(), egress.policy_id, egress.generation),
-            )))))
+        let browser = if let Some(egress) = &egress {
+            let executable = computer_config(config)
+                .map_err(|error| TinyBusError::failed(error.to_string()))?
+                .browser
+                .and_then(|browser| browser.executable);
+            Arc::new(Browser::new(Arc::new(
+                EnforcedAgentBrowser::new(Arc::new(BusAuthorizer::new(
+                    connection.clone(),
+                    egress.policy_id.clone(),
+                    egress.generation,
+                )))
+                .with_executable(executable),
+            )))
         } else {
             Arc::new(Browser::new(Arc::new(AgentBrowser)))
         };
@@ -55,7 +139,7 @@ impl DesktopService {
         } else {
             None
         };
-        Self::with_browser_and_trace_sink(config, browser, trace_link)
+        Self::with_browser_and_defaults(config, browser, egress, trace_link)
             .map_err(|error| TinyBusError::failed(error.to_string()))
     }
 
@@ -67,6 +151,13 @@ impl DesktopService {
     /// Propagates whatever [`Desktop::from_config`] rejects.
     #[cfg(test)]
     pub(crate) fn with_browser(config: &serde_json::Value, browser: Arc<Browser>) -> Result<Self> {
+        let egress = BrowserDefaults::egress_from_raw(config)?;
+        if egress.is_some() {
+            return Err(crate::Error::ConfigFieldType {
+                field: "browser",
+                expected: "a module set up with its authenticated host callback connection",
+            });
+        }
         if trace_sink_destination(config)?.is_some() {
             return Err(crate::Error::ConfigFieldType {
                 field: "trace_sink",
@@ -79,30 +170,27 @@ impl DesktopService {
                 expected: "a module set up with its confidential host callback connection",
             });
         }
-        Self::with_browser_and_trace_sink(config, browser, None)
+        Self::with_browser_and_defaults(config, browser, egress, None)
     }
 
-    fn with_browser_and_trace_sink(
+    fn with_browser_and_defaults(
         config: &serde_json::Value,
         browser: Arc<Browser>,
+        egress: Option<crate::tinybus_module::config::BrowserEgressConfig>,
         trace_link: Option<Arc<TraceLink>>,
     ) -> Result<Self> {
         let cursor = Arc::new(cursor_config(config)?);
-        let mut desktop = Desktop::from_config(config)?.with_cursor(cursor.clone());
+        let computer = computer_config(config)?;
+        let mut desktop =
+            Desktop::from_config(&desktop_config(config, &computer))?.with_cursor(cursor.clone());
         if let Some(link) = &trace_link {
             desktop = desktop.with_trace_sink(link.clone());
         }
-        let jev = config
-            .as_object()
-            .and_then(|object| object.get("jev"))
-            .map(|value| {
-                let config: JevConfig = serde_json::from_value(value.clone()).map_err(|_| {
-                    crate::Error::ConfigFieldType {
-                        field: "jev",
-                        expected: "a valid Jev configuration object",
-                    }
-                })?;
-                agentic::JevRuntime::configure(&config).map_err(|_| crate::Error::ConfigFieldType {
+        let jev = computer
+            .jev
+            .as_ref()
+            .map(|config: &JevConfig| {
+                agentic::JevRuntime::configure(config).map_err(|_| crate::Error::ConfigFieldType {
                     field: "jev",
                     expected: "a valid Jev configuration object",
                 })
@@ -111,23 +199,21 @@ impl DesktopService {
         // The planner's configuration also brings the rescuer, on the same
         // route unless it names its own `rescue_route`: a failed step is
         // handed to it before a task fails.
-        let planner = config
-            .as_object()
-            .and_then(|object| object.get("planner"))
-            .map(|value| {
+        let planner = computer
+            .planner
+            .as_ref()
+            .map(|config: &PlannerConfig| {
                 let invalid = || crate::Error::ConfigFieldType {
                     field: "planner",
                     expected: "a planner configuration object with an api_key and an approved route",
                 };
-                let config: agentic::PlannerConfig =
-                    serde_json::from_value(value.clone()).map_err(|_| invalid())?;
-                let planner = agentic::open_router(&config).map_err(|_| invalid())?;
-                let rescuer = agentic::open_router_rescuer(&config).map_err(|_| invalid())?;
-                let shaper = agentic::open_router_shaper(&config).map_err(|_| invalid())?;
+                let planner = agentic::open_router(config).map_err(|_| invalid())?;
+                let rescuer = agentic::open_router_rescuer(config).map_err(|_| invalid())?;
+                let shaper = agentic::open_router_shaper(config).map_err(|_| invalid())?;
                 Ok::<_, crate::Error>((planner, rescuer, shaper))
             })
             .transpose()?;
-        let browser_defaults = BrowserDefaults::from_config(config)?;
+        let browser_defaults = BrowserDefaults::from_config(computer.browser.as_ref(), egress);
         let mut runner = WorkspaceRunner::new(desktop.clone(), jev.clone(), browser.clone());
         runner.defaults.clone_from(&browser_defaults);
         runner.cursor = cursor;
@@ -186,6 +272,10 @@ impl DesktopService {
         self.jev.clone()
     }
 }
+
+#[cfg(test)]
+#[path = "service_tests.rs"]
+mod tests;
 
 /// Whether the desktop surface is usable, from a `Permissions` reply: the
 /// accessibility permission must be granted (or not needed on this platform).

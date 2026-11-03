@@ -7,6 +7,7 @@
 //! request.
 
 use tinycomputer_browser::{CursorPace, Perception, ScreenCursor, SessionOptions, Settle};
+use tinycomputer_bus::config::{BrowserConfig, BrowserPerception, BrowserSettle};
 
 use crate::Result;
 
@@ -61,101 +62,72 @@ impl Default for BrowserDefaults {
 }
 
 impl BrowserDefaults {
-    /// Reads the optional `browser` object: `executable` and `user_agent`
-    /// strings, `args` an array of strings, `perception` either `sight` or
-    /// `tree`, `settle` either `prompt` or `steady`, and `prelaunch` a
-    /// boolean.
-    ///
-    /// # Errors
-    ///
-    /// [`crate::Error::ConfigFieldType`] when `browser` or any of its fields
-    /// has the wrong shape; an unknown field is refused too, so a misspelt
-    /// setting cannot be silently ignored.
-    pub(crate) fn from_config(config: &serde_json::Value) -> Result<Self> {
+    /// Applies the browser defaults decoded from the public module config.
+    pub(crate) fn from_config(
+        config: Option<&BrowserConfig>,
+        egress: Option<BrowserEgressConfig>,
+    ) -> Self {
+        let Some(config) = config else {
+            return Self {
+                egress,
+                ..Self::default()
+            };
+        };
+        Self {
+            executable: config.executable.clone(),
+            user_agent: config.user_agent.clone(),
+            args: config.args.clone(),
+            perception: match config.perception {
+                BrowserPerception::Sight => Perception::Sight,
+                BrowserPerception::Tree => Perception::Tree,
+            },
+            settle: match config.settle {
+                BrowserSettle::Prompt => Settle::Prompt,
+                BrowserSettle::Steady => Settle::Steady,
+            },
+            prelaunch: config.prelaunch,
+            egress,
+        }
+    }
+
+    pub(crate) fn egress_from_raw(
+        config: &serde_json::Value,
+    ) -> Result<Option<BrowserEgressConfig>> {
         let Some(browser) = config.as_object().and_then(|object| object.get("browser")) else {
-            return Ok(Self::default());
+            return Ok(None);
+        };
+        let Some(egress) = browser.as_object().and_then(|object| object.get("egress")) else {
+            return Ok(None);
         };
         let invalid = || crate::Error::ConfigFieldType {
             field: "browser",
-            expected: "an object with optional `executable` and `user_agent` strings, an `args` \
-                       array of strings, a `perception` of sight or tree, a `settle` of \
-                       prompt or steady, a `prelaunch` boolean, and optional private `egress` policy",
+            expected: "an object with a valid private egress policy",
         };
-        let browser = browser.as_object().ok_or_else(invalid)?;
-        let text = |name: &str| match browser.get(name) {
-            None => Ok(None),
-            Some(serde_json::Value::String(value)) => Ok(Some(value.clone())),
-            Some(_) => Err(invalid()),
-        };
-        let mut defaults = Self {
-            executable: text("executable")?,
-            user_agent: text("user_agent")?,
-            ..Self::default()
-        };
-        if let Some(args) = browser.get("args") {
-            defaults.args = args
-                .as_array()
-                .ok_or_else(invalid)?
-                .iter()
-                .map(|arg| arg.as_str().map(str::to_owned).ok_or_else(invalid))
-                .collect::<Result<_>>()?;
-        }
-        defaults.perception = match text("perception")?.as_deref() {
-            None | Some("sight") => Perception::Sight,
-            Some("tree") => Perception::Tree,
-            Some(_) => return Err(invalid()),
-        };
-        defaults.settle = match text("settle")?.as_deref() {
-            None | Some("prompt") => Settle::Prompt,
-            Some("steady") => Settle::Steady,
-            Some(_) => return Err(invalid()),
-        };
-        defaults.prelaunch = match browser.get("prelaunch") {
-            None => true,
-            Some(serde_json::Value::Bool(prelaunch)) => *prelaunch,
-            Some(_) => return Err(invalid()),
-        };
-        defaults.egress = match browser.get("egress") {
-            None => None,
-            Some(serde_json::Value::Object(egress)) => {
-                let policy_id = egress
-                    .get("policy_id")
-                    .and_then(serde_json::Value::as_str)
-                    .filter(|id| !id.is_empty() && id.len() <= 64)
-                    .ok_or_else(invalid)?;
-                let generation = egress
-                    .get("generation")
-                    .and_then(serde_json::Value::as_u64)
-                    .filter(|generation| *generation > 0)
-                    .ok_or_else(invalid)?;
-                if egress.len() != 2
-                    || browser.contains_key("args")
-                    || browser.contains_key("executable")
-                {
-                    return Err(invalid());
-                }
-                Some(BrowserEgressConfig {
-                    policy_id: policy_id.to_owned(),
-                    generation,
-                })
-            }
-            Some(_) => return Err(invalid()),
-        };
-        if browser.keys().any(|key| {
-            ![
-                "executable",
-                "user_agent",
-                "args",
-                "perception",
-                "settle",
-                "prelaunch",
-                "egress",
-            ]
-            .contains(&key.as_str())
-        }) {
+        let object = egress.as_object().ok_or_else(invalid)?;
+        let policy_id = object
+            .get("policy_id")
+            .and_then(serde_json::Value::as_str)
+            .filter(|id| !id.is_empty() && id.len() <= 64)
+            .ok_or_else(invalid)?;
+        let generation = object
+            .get("generation")
+            .and_then(serde_json::Value::as_u64)
+            .filter(|generation| *generation > 0)
+            .ok_or_else(invalid)?;
+        // The host's own `executable` stays allowed: the enforced launcher
+        // runs it with the proxy and resolver flags. Extra `args` could undo
+        // them, so they are refused.
+        if object.len() != 2
+            || browser
+                .as_object()
+                .is_some_and(|browser| browser.contains_key("args"))
+        {
             return Err(invalid());
         }
-        Ok(defaults)
+        Ok(Some(BrowserEgressConfig {
+            policy_id: policy_id.to_owned(),
+            generation,
+        }))
     }
 
     /// `options` with these defaults filled in where the caller left them

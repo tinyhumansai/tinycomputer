@@ -160,6 +160,68 @@ async fn approved_http_request_is_rewritten_and_forwarded_to_approved_fixture() 
 }
 
 #[tokio::test]
+async fn hop_by_hop_headers_are_not_forwarded() {
+    let destination = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = destination.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = destination.accept().await.unwrap();
+        let mut request = Vec::new();
+        let mut chunk = [0; 512];
+        loop {
+            let n = socket.read(&mut chunk).await.unwrap();
+            request.extend_from_slice(&chunk[..n]);
+            if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                break;
+            }
+        }
+        let request = std::str::from_utf8(&request).unwrap().to_ascii_lowercase();
+        for dropped in ["x-internal:", "keep-alive:", "te:", "upgrade:"] {
+            assert!(
+                !request.contains(&format!("\r\n{dropped}")),
+                "{dropped} was forwarded"
+            );
+        }
+        assert!(request.contains("x-kept: yes\r\n"));
+        assert!(request.contains("connection: close\r\n"));
+        socket
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+            .await
+            .unwrap();
+    });
+    let authorizer = Arc::new(FixtureAuthorizer {
+        address,
+        allow: true,
+        consumed: Arc::new(AtomicBool::new(false)),
+    });
+    let proxy = EgressProxy::bind(authorizer, "hop-session".into(), FIXTURE_PASSWORD.into())
+        .await
+        .unwrap();
+    let mut client = TcpStream::connect(proxy.url().replace("http://", ""))
+        .await
+        .unwrap();
+    client
+        .write_all(
+            format!(
+                "GET http://control.test:{}/ HTTP/1.1\r\nHost: control.test:{}\r\nProxy-Authorization: {}\r\nConnection: keep-alive, X-Internal\r\nX-Internal: 1\r\nKeep-Alive: timeout=5\r\nTE: trailers\r\nUpgrade: h2c\r\nX-Kept: yes\r\n\r\n",
+                address.port(),
+                address.port(),
+                proxy_authorization()
+            )
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    let mut response = Vec::new();
+    client.read_to_end(&mut response).await.unwrap();
+    assert!(
+        std::str::from_utf8(&response)
+            .unwrap()
+            .ends_with("\r\n\r\nok")
+    );
+    server.await.unwrap();
+}
+
+#[tokio::test]
 async fn duplicate_lengths_and_pipelined_authorities_are_refused_before_dial() {
     let destination = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     destination.set_nonblocking(true).unwrap();

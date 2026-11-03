@@ -31,6 +31,8 @@
 //!   `Browser`-prefixed), namespaced so its snapshot and screenshot types
 //!   never shadow the desktop ones. They reply with the same envelope.
 //! - [`version`] — [`CONTRACT_VERSION`] and the [`is_compatible`] bind rule.
+//! - [`config`] — the typed load-time settings shared by hosts and the module.
+//! - [`sites`] — the canonical HTTP(S) site-name normalization used by both.
 //!
 //! # How the pieces fit together at a call site
 //!
@@ -120,6 +122,7 @@ pub mod browser;
 pub mod browser_egress;
 pub mod catalogue;
 pub mod clipboard;
+pub mod config;
 pub mod consequence_host;
 pub mod desktop_tool;
 pub mod envelope;
@@ -131,6 +134,7 @@ pub mod names;
 pub mod notifications;
 pub mod observation;
 pub mod site_memory;
+pub mod sites;
 pub mod system;
 pub mod trace_sink;
 pub mod version;
@@ -148,8 +152,8 @@ pub use apps::{
 };
 pub use clipboard::{ClipboardGetRequest, ClipboardSetRequest};
 pub use envelope::{
-    Delivery, DeliveryDisposition, DesktopError, DesktopResponse, ENVELOPE_VERSION, RecoveryHint,
-    RetryDisposition,
+    Delivery, DeliveryDisposition, DesktopError, DesktopResponse, DesktopResponseError,
+    ENVELOPE_VERSION, RecoveryHint, RetryDisposition,
 };
 pub use flow::{
     ChooseStep, Deliberation, FLOW_GUIDE, Flow, FlowAction, FlowActionRecord, FlowBrief, FlowLoop,

@@ -8,6 +8,7 @@
 
 use serde::Deserialize;
 use tinycomputer_bus::agent::{LanguageModelConfiguration, LanguageModelProvider};
+pub use tinycomputer_bus::config::{ModelRoute, PlannerConfig};
 
 /// The model used when the configuration names none.
 pub const PLANNER_MODEL: &str = "anthropic/claude-sonnet-5";
@@ -27,76 +28,6 @@ pub const OPEN_ROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
 /// Tiny Humans' OpenAI-compatible gateway, the only base URL the
 /// `tiny_humans` route accepts.
 pub const TINYHUMANS_BASE_URL: &str = "https://api.tinyhumans.ai/openai/v1";
-
-/// The module's private `planner` configuration.
-///
-/// Its route fields (`api_key`, `provider`, `endpoint_url`, `sdk_name`) sit
-/// at the top level of the object, beside the three models. The planner and
-/// the shaper always take that route; the rescuer takes `rescue_route` when
-/// one is given.
-#[derive(Clone, Deserialize)]
-pub struct PlannerConfig {
-    /// The route the planner, the shaper, and (without `rescue_route`) the
-    /// rescuer call their models through.
-    #[serde(flatten)]
-    pub route: ModelRoute,
-    /// The model id; [`PLANNER_MODEL`] when absent.
-    #[serde(default)]
-    pub model: Option<String>,
-    /// The model id failed steps are rescued with; [`RESCUE_MODEL`] when
-    /// absent.
-    #[serde(default)]
-    pub rescue_model: Option<String>,
-    /// The model id a finished task's answer is shaped with;
-    /// [`OUTPUT_MODEL`] when absent.
-    #[serde(default)]
-    pub output_model: Option<String>,
-    /// A separate route, with its own key, for the rescuer alone. Nothing is
-    /// inherited from the planner's route: it is a complete route of its own.
-    #[serde(default)]
-    pub rescue_route: Option<ModelRoute>,
-}
-
-impl PlannerConfig {
-    /// The route the rescuer calls through: `rescue_route`, or the planner's.
-    #[must_use]
-    pub fn rescuer_route(&self) -> &ModelRoute {
-        self.rescue_route.as_ref().unwrap_or(&self.route)
-    }
-}
-
-impl std::fmt::Debug for PlannerConfig {
-    /// Never prints a key.
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("PlannerConfig")
-            .field("route", &self.route)
-            .field("model", &self.model)
-            .field("rescue_model", &self.rescue_model)
-            .field("output_model", &self.output_model)
-            .field("rescue_route", &self.rescue_route)
-            .finish()
-    }
-}
-
-/// Where a language model's requests go, and with which credential.
-#[derive(Clone, Default, Deserialize)]
-pub struct ModelRoute {
-    /// The provider's credential: an `OpenRouter` key, or the host's
-    /// `TinyHumans` bearer.
-    pub api_key: String,
-    /// The OpenAI-compatible route; `open_router` when absent.
-    #[serde(default)]
-    pub provider: LanguageModelProvider,
-    /// The provider's approved base URL, repeated exactly; any other value is
-    /// refused.
-    #[serde(default)]
-    pub endpoint_url: Option<String>,
-    /// Host product attribution, sent as `x-sdk-name` to the `tiny_humans`
-    /// route only.
-    #[serde(default)]
-    pub sdk_name: Option<String>,
-}
 
 /// A host-owned OpenAI-compatible model endpoint.
 ///
@@ -136,19 +67,6 @@ pub struct HostModels {
     pub output: Option<HostModelConfig>,
 }
 
-impl std::fmt::Debug for ModelRoute {
-    /// Never prints the key.
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("ModelRoute")
-            .field("api_key", &"[REDACTED]")
-            .field("provider", &self.provider)
-            .field("endpoint_url", &self.endpoint_url)
-            .field("sdk_name", &self.sdk_name)
-            .finish()
-    }
-}
-
 /// A route checked and ready to build a model on.
 pub(super) struct ResolvedRoute {
     pub(super) provider: LanguageModelProvider,
@@ -156,47 +74,43 @@ pub(super) struct ResolvedRoute {
     pub(super) sdk_name: Option<String>,
 }
 
-impl ModelRoute {
-    /// This route checked: a key present, and an endpoint, if any, that is
-    /// the provider's own.
-    pub(super) fn resolve(&self) -> Result<ResolvedRoute, String> {
-        if self.api_key.trim().is_empty() {
-            return Err("the planner configuration needs an api_key".to_owned());
-        }
-        if self.provider == LanguageModelProvider::OpenAiCompatible {
-            return Err(
-                "open_ai_compatible routes are available only to Rust embedding hosts".to_owned(),
-            );
-        }
-        let base_url = match &self.endpoint_url {
-            Some(endpoint) if trusted_base_url(self.provider, endpoint) => {
-                endpoint.trim_end_matches('/').to_owned()
-            }
-            Some(_) => {
-                return Err("endpoint_url is not an approved language model route".to_owned());
-            }
-            None => approved_base_url(self.provider).to_owned(),
-        };
-        let sdk_name = match self.provider {
-            LanguageModelProvider::TinyHumans => {
-                self.sdk_name.as_deref().and_then(sanitized_sdk_name)
-            }
-            LanguageModelProvider::OpenRouter | LanguageModelProvider::OpenAiCompatible => None,
-        };
-        Ok(ResolvedRoute {
-            provider: self.provider,
-            base_url,
-            sdk_name,
-        })
+/// Validates a configured route and resolves its approved base URL.
+pub(super) fn resolve_route(route: &ModelRoute) -> Result<ResolvedRoute, String> {
+    if route.api_key.trim().is_empty() {
+        return Err("the planner configuration needs an api_key".to_owned());
     }
-
-    /// The non-secret summary of `model` on this route.
-    pub(super) fn describe(&self, model: &str) -> LanguageModelConfiguration {
-        LanguageModelConfiguration {
-            provider: self.provider,
-            model: model.to_owned(),
-            endpoint_url: self.endpoint_url.clone(),
+    if route.provider == LanguageModelProvider::OpenAiCompatible {
+        return Err(
+            "open_ai_compatible routes are available only to Rust embedding hosts".to_owned(),
+        );
+    }
+    let base_url = match &route.endpoint_url {
+        Some(endpoint) if trusted_base_url(route.provider, endpoint) => {
+            endpoint.trim_end_matches('/').to_owned()
         }
+        Some(_) => {
+            return Err("endpoint_url is not an approved language model route".to_owned());
+        }
+        None => approved_base_url(route.provider).to_owned(),
+    };
+    let sdk_name = match route.provider {
+        LanguageModelProvider::TinyHumans => route.sdk_name.as_deref().and_then(sanitized_sdk_name),
+        LanguageModelProvider::OpenRouter | LanguageModelProvider::OpenAiCompatible => None,
+    };
+    Ok(ResolvedRoute {
+        provider: route.provider,
+        base_url,
+        sdk_name,
+    })
+}
+
+/// Returns the non-secret model summary stored on the planner, rescuer, or
+/// shaper.
+pub(super) fn describe_route(route: &ModelRoute, model: &str) -> LanguageModelConfiguration {
+    LanguageModelConfiguration {
+        provider: route.provider,
+        model: model.to_owned(),
+        endpoint_url: route.endpoint_url.clone(),
     }
 }
 

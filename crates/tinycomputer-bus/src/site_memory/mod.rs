@@ -4,9 +4,13 @@
 //! The module returns, with every finished task, the plan it ran and the
 //! elements its steps found, and takes them back on the next task on that
 //! site. It keeps nothing between tasks itself, so the host serves this
-//! interface and decides only *where* the bytes live (a file, a storage
-//! port). The reuse rules, the fact-value filtering and the 30-day expiry
-//! are the module's (`tinycomputer-core::sites`), not the host's.
+//! interface and owns where the bytes live (a file, a storage port). The
+//! reuse rules, the fact-value filtering and each plan's or hint's 30-day
+//! freshness are the module's (`tinycomputer-core::sites`), not the host's.
+//!
+//! A host may also periodically remove unchanged backing files as physical
+//! storage maintenance. Schedule that cleanup outside `Load` requests; it is
+//! independent of the module's per-plan and per-hint freshness rules.
 //!
 //! Three members, all synchronous request/response over plain data:
 //!

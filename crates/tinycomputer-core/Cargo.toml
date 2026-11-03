@@ -20,9 +20,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 # Derive macros for the crate-wide error type in `src/error/`.
 thiserror = { workspace = true }
-# Site memory keys a plan by a digest of its facts, so no value is stored, and
-# reads a site off an address by the WHATWG URL rules.
+# Site memory keys a plan by a digest of its facts, so no value is stored.
 sha2 = { workspace = true }
+# Parse browser URLs into the plain site names carried by the bus contract.
 url = { workspace = true }
 
 [lints]

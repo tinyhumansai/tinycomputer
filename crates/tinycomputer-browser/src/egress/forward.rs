@@ -48,18 +48,35 @@ pub(super) async fn initialize_upstream(
         url.path().to_owned()
     };
     let mut forwarded = format!("{} {path} {}\r\n", request.method, request.version);
-    for line in request
-        .lines
-        .iter()
-        .skip(1)
-        .map(String::as_str)
-        .filter(|line| !line.is_empty())
-    {
-        let name = line.split_once(':').map_or("", |(name, _)| name);
-        if !name.eq_ignore_ascii_case("connection")
-            && !name.eq_ignore_ascii_case("proxy-connection")
-            && !name.eq_ignore_ascii_case("proxy-authorization")
-        {
+    let headers = || {
+        request
+            .lines
+            .iter()
+            .skip(1)
+            .filter(|line| !line.is_empty())
+            .map(|line| (line, line.split_once(':').map_or("", |(name, _)| name)))
+    };
+    // RFC 9110 §7.6.1: the fields `Connection` nominates are this hop's only.
+    // `Upgrade` stays for a websocket request, and the framing fields the
+    // proxy read the body by stay so the upstream frames it the same way.
+    let nominated: Vec<String> = headers()
+        .filter(|(_, name)| {
+            name.eq_ignore_ascii_case("connection") || name.eq_ignore_ascii_case("proxy-connection")
+        })
+        .flat_map(|(line, name)| line[name.len() + 1..].split(','))
+        .map(|token| token.trim().to_ascii_lowercase())
+        .filter(|token| {
+            !["upgrade", "host", "content-length", "transfer-encoding"].contains(&token.as_str())
+        })
+        .collect();
+    for (line, name) in headers() {
+        let name = name.to_ascii_lowercase();
+        let hop_by_hop = matches!(
+            name.as_str(),
+            "connection" | "proxy-connection" | "proxy-authorization" | "keep-alive" | "te"
+        ) || (name == "upgrade" && !request.has_upgrade)
+            || nominated.contains(&name);
+        if !hop_by_hop {
             forwarded.push_str(line);
             forwarded.push_str("\r\n");
         }

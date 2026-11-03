@@ -32,9 +32,13 @@ payload vocabulary has to be published as an ordinary library. This is it.
 | `browser`       | the `Browser…` members' payloads, names, and error codes            |
 | `trace_sink`    | the optional `TraceSinkHost` callback names and payloads            |
 | `version`       | `CONTRACT_VERSION` and the bind rule a host applies to it           |
+| `config`        | the typed load-time configuration shared by hosts and the module    |
+| `sites`         | canonical, strict HTTP(S) site-name normalization                   |
 
 Four dependencies, all pure Rust: `thiserror`, `serde`, `serde_json`, and
-`base64` for compact binary artifact payloads.
+`base64` for compact binary artifact payloads. The contract keeps site names as
+strings and validates their plain host-name form; URL parsing and IDNA
+normalization live in `tinycomputer-core`.
 
 ## This crate sits underneath `tinycomputer`
 

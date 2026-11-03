@@ -7,9 +7,10 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use super::{
-    Delivery, DeliveryDisposition, DesktopError, DesktopResponse, ENVELOPE_VERSION, RecoveryHint,
-    RetryDisposition,
+    Delivery, DeliveryDisposition, DesktopError, DesktopResponse, DesktopResponseError,
+    ENVELOPE_VERSION, RecoveryHint, RetryDisposition,
 };
+use serde::Deserialize;
 use serde_json::json;
 
 #[test]
@@ -138,4 +139,85 @@ fn an_absent_disposition_decodes_as_unknown() {
 
     assert_eq!(error.disposition, Delivery::default());
     assert_eq!(error.disposition.delivery, DeliveryDisposition::Unknown);
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+struct Payload {
+    value: String,
+}
+
+#[test]
+fn into_data_checks_version_and_decodes_a_successful_reply() {
+    let reply = DesktopResponse::ok("example", json!({"value": "done"}));
+    let payload: Payload = reply.into_data().expect("success payload decodes");
+    assert_eq!(
+        payload,
+        Payload {
+            value: "done".into()
+        }
+    );
+
+    let mut stale = DesktopResponse::ok("example", json!({"value": "done"}));
+    stale.version = "2.4".into();
+    assert!(matches!(
+        stale.into_data::<Payload>(),
+        Err(DesktopResponseError::Version { actual, .. }) if actual == "2.4"
+    ));
+}
+
+#[test]
+fn into_data_accepts_a_present_null_value_after_wire_round_trip() {
+    let reply = DesktopResponse::ok("noop", json!(null));
+    let wire = serde_json::to_value(reply).expect("response serializes");
+    let decoded: DesktopResponse = serde_json::from_value(wire).expect("wire response decodes");
+
+    assert!(matches!(decoded.into_data::<Option<String>>(), Ok(None)));
+}
+
+#[test]
+fn into_data_still_rejects_a_missing_success_value() {
+    let decoded: DesktopResponse = serde_json::from_value(json!({
+        "version": "2.5",
+        "ok": true,
+        "command": "noop"
+    }))
+    .expect("wire response decodes");
+
+    assert!(matches!(
+        decoded.into_data::<()>(),
+        Err(DesktopResponseError::InconsistentOutcome {
+            ok: true,
+            has_data: false,
+            has_error: false
+        })
+    ));
+}
+
+#[test]
+fn into_data_returns_remote_errors_and_rejects_inconsistent_outcomes() {
+    let failed = DesktopResponse::err("example", DesktopError::new("DENIED", "refused"));
+    assert!(matches!(
+        failed.into_data::<Payload>(),
+        Err(DesktopResponseError::Remote(error)) if error.code == "DENIED"
+    ));
+
+    let mut inconsistent = DesktopResponse::ok("example", json!({"value": "done"}));
+    inconsistent.error = Some(DesktopError::new("DENIED", "contradictory"));
+    assert!(matches!(
+        inconsistent.into_data::<Payload>(),
+        Err(DesktopResponseError::InconsistentOutcome {
+            ok: true,
+            has_data: true,
+            has_error: true
+        })
+    ));
+}
+
+#[test]
+fn into_data_rejects_data_with_the_wrong_shape() {
+    let reply = DesktopResponse::ok("example", json!({"value": 4}));
+    assert!(matches!(
+        reply.into_data::<Payload>(),
+        Err(DesktopResponseError::Decode(_))
+    ));
 }

@@ -1,6 +1,6 @@
 //! The response envelope, its error payload, and the delivery vocabulary.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
 /// The envelope version this contract encodes.
@@ -18,6 +18,7 @@ pub const ENVELOPE_VERSION: &str = "2.5";
 pub struct DesktopResponse {
     /// The envelope version. [`ENVELOPE_VERSION`] for replies this module
     /// produces.
+    #[serde(default)]
     pub version: String,
     /// Whether the command succeeded.
     pub ok: bool,
@@ -25,11 +26,22 @@ pub struct DesktopResponse {
     /// `ListApps`. Present on both outcomes so a batched caller can correlate.
     pub command: String,
     /// The command's result. Present when [`DesktopResponse::ok`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present_value",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub data: Option<Value>,
     /// Why the command failed. Present when not [`DesktopResponse::ok`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<DesktopError>,
+}
+
+fn deserialize_present_value<'de, D>(deserializer: D) -> Result<Option<Value>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Value::deserialize(deserializer).map(Some)
 }
 
 impl DesktopResponse {
@@ -72,6 +84,68 @@ impl DesktopResponse {
             error: Some(error),
         }
     }
+
+    /// Checks the envelope version and outcome fields, then decodes the
+    /// successful result as `T`.
+    ///
+    /// A failed command is returned as [`DesktopResponseError::Remote`]. A
+    /// malformed envelope is rejected before its data can be mistaken for a
+    /// successful result.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the version is unsupported, the outcome fields
+    /// disagree, the remote command failed, or its data has the wrong shape.
+    pub fn into_data<T: DeserializeOwned>(self) -> Result<T, DesktopResponseError> {
+        if self.version != ENVELOPE_VERSION {
+            return Err(DesktopResponseError::Version {
+                expected: ENVELOPE_VERSION,
+                actual: self.version,
+            });
+        }
+        match (self.ok, self.data, self.error) {
+            (true, Some(data), None) => {
+                serde_json::from_value(data).map_err(DesktopResponseError::Decode)
+            }
+            (false, None, Some(error)) => Err(DesktopResponseError::Remote(Box::new(error))),
+            (ok, data, error) => Err(DesktopResponseError::InconsistentOutcome {
+                ok,
+                has_data: data.is_some(),
+                has_error: error.is_some(),
+            }),
+        }
+    }
+}
+
+/// A failed result from [`DesktopResponse::into_data`].
+#[derive(Debug, thiserror::Error)]
+pub enum DesktopResponseError {
+    /// The module returned an envelope version this crate does not understand.
+    #[error("unsupported desktop response version {actual}; expected {expected}")]
+    Version {
+        /// The envelope version this crate accepts.
+        expected: &'static str,
+        /// The version sent by the module.
+        actual: String,
+    },
+    /// The success flag disagrees with whether data or an error is present.
+    #[error(
+        "inconsistent desktop response outcome (ok={ok}, has_data={has_data}, has_error={has_error})"
+    )]
+    InconsistentOutcome {
+        /// Whether the module marked the response successful.
+        ok: bool,
+        /// Whether a data field was present.
+        has_data: bool,
+        /// Whether an error field was present.
+        has_error: bool,
+    },
+    /// The command failed with a structured module error.
+    #[error("desktop command failed")]
+    Remote(Box<DesktopError>),
+    /// The success data did not match the expected payload type.
+    #[error("desktop response data had the wrong shape: {0}")]
+    Decode(#[source] serde_json::Error),
 }
 
 /// Why a command failed, in the form a caller can act on.

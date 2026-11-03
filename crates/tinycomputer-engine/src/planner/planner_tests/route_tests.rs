@@ -5,7 +5,8 @@ use serde_json::json;
 use tinycomputer_bus::agent::{LanguageModelConfiguration, LanguageModelProvider};
 
 use super::super::config::{
-    ModelRoute, OPEN_ROUTER_BASE_URL, PlannerConfig, TINYHUMANS_BASE_URL, trusted_base_url,
+    ModelRoute, OPEN_ROUTER_BASE_URL, PlannerConfig, TINYHUMANS_BASE_URL, resolve_route,
+    trusted_base_url,
 };
 use super::super::hosted::chat_model;
 use super::super::{open_router, open_router_rescuer, open_router_shaper};
@@ -136,7 +137,7 @@ fn each_selection_builds_its_client_on_the_selected_route() {
     assert_eq!(chat.provider(), "tinyhumans");
     assert_eq!(chat.model(), "openai/gpt-6-luna");
     assert_eq!(
-        tiny.resolve().unwrap().sdk_name.as_deref(),
+        resolve_route(&tiny).unwrap().sdk_name.as_deref(),
         Some("openhumanapp"),
         "the product name is sanitized"
     );
@@ -145,7 +146,7 @@ fn each_selection_builds_its_client_on_the_selected_route() {
         ..open
     };
     assert_eq!(
-        open_with_name.resolve().unwrap().sdk_name,
+        resolve_route(&open_with_name).unwrap().sdk_name,
         None,
         "attribution goes to the TinyHumans gateway only"
     );

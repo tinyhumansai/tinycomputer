@@ -30,6 +30,7 @@ pub struct AgentBrowser;
 #[derive(Clone)]
 pub struct EnforcedAgentBrowser {
     authorizer: Arc<dyn EgressAuthorizer>,
+    executable: Option<String>,
 }
 
 impl std::fmt::Debug for EnforcedAgentBrowser {
@@ -42,7 +43,18 @@ impl EnforcedAgentBrowser {
     /// Use the authenticated host callback for every launched session.
     #[must_use]
     pub fn new(authorizer: Arc<dyn EgressAuthorizer>) -> Self {
-        Self { authorizer }
+        Self {
+            authorizer,
+            executable: None,
+        }
+    }
+
+    /// Launch the host-configured Chrome or Chromium binary. It is host
+    /// control, like the proxy: a launch may repeat it but never name another.
+    #[must_use]
+    pub fn with_executable(mut self, executable: Option<String>) -> Self {
+        self.executable = executable;
+        self
     }
 }
 
@@ -53,6 +65,8 @@ impl Launcher for AgentBrowser {
             egress_authorizer: None,
             proxy: None,
             proxy_session_id: String::new(),
+            proxy_password: String::new(),
+            host_executable: None,
             enforced_launch: false,
         })
     }
@@ -60,13 +74,24 @@ impl Launcher for AgentBrowser {
 
 impl Launcher for EnforcedAgentBrowser {
     fn open(&self, session: &str) -> Box<dyn Engine> {
-        Box::new(Linked {
-            state: DaemonState::with_options(state_options(session)),
-            egress_authorizer: Some(self.authorizer.clone()),
-            proxy: None,
-            proxy_session_id: private_session_id(),
-            enforced_launch: false,
-        })
+        let mut engine = enforced(self.authorizer.clone(), session);
+        engine.host_executable.clone_from(&self.executable);
+        Box::new(engine)
+    }
+}
+
+/// An enforced session. The proxy password is its own secret: the session id
+/// reaches the host in every egress callback, so it must not also unlock the
+/// proxy.
+fn enforced(authorizer: Arc<dyn EgressAuthorizer>, session: &str) -> Linked {
+    Linked {
+        state: DaemonState::with_options(state_options(session)),
+        egress_authorizer: Some(authorizer),
+        proxy: None,
+        proxy_session_id: private_session_id(),
+        proxy_password: private_session_id(),
+        host_executable: None,
+        enforced_launch: false,
     }
 }
 
@@ -75,6 +100,8 @@ struct Linked {
     egress_authorizer: Option<Arc<dyn EgressAuthorizer>>,
     proxy: Option<EgressProxy>,
     proxy_session_id: String,
+    proxy_password: String,
+    host_executable: Option<String>,
     enforced_launch: bool,
 }
 
@@ -87,7 +114,7 @@ impl Engine for Linked {
         let launch = self.egress_authorizer.is_some() && action.as_deref() == Some("launch");
         Box::pin(async move {
             let command = if launch {
-                if self.proxy_session_id.len() != 48 {
+                if self.proxy_session_id.len() != 48 || self.proxy_password.len() != 48 {
                     return failure_reply(
                         &command,
                         "network policy could not create a private session identity",
@@ -100,7 +127,7 @@ impl Engine for Linked {
                     match EgressProxy::bind(
                         authorizer,
                         self.proxy_session_id.clone(),
-                        self.proxy_session_id.clone(),
+                        self.proxy_password.clone(),
                     )
                     .await
                     {
@@ -113,7 +140,12 @@ impl Engine for Linked {
                 let Some(proxy) = self.proxy.as_ref() else {
                     return failure_reply(&command, "network policy proxy could not start");
                 };
-                match enforce_launch(command.clone(), &proxy.url(), &self.proxy_session_id) {
+                match enforce_launch(
+                    command.clone(),
+                    &proxy.url(),
+                    &self.proxy_password,
+                    self.host_executable.as_deref(),
+                ) {
                     Ok(command) => command,
                     Err(reason) => return failure_reply(&command, reason),
                 }
@@ -200,11 +232,18 @@ fn enforce_launch(
     command: Value,
     proxy: &str,
     proxy_password: &str,
+    host_executable: Option<&str>,
 ) -> Result<Value, &'static str> {
     let has_ambient_browser_config = command.get("action").and_then(Value::as_str)
         == Some("launch")
         && has_ambient_browser_config();
-    enforce_launch_with_config(command, proxy, proxy_password, has_ambient_browser_config)
+    enforce_launch_with_config(
+        command,
+        proxy,
+        proxy_password,
+        has_ambient_browser_config,
+        host_executable,
+    )
 }
 
 fn enforce_launch_with_config(
@@ -212,6 +251,7 @@ fn enforce_launch_with_config(
     proxy: &str,
     proxy_password: &str,
     has_ambient_browser_config: bool,
+    host_executable: Option<&str>,
 ) -> Result<Value, &'static str> {
     if command.get("action").and_then(Value::as_str) != Some("launch") {
         return Ok(command);
@@ -224,12 +264,18 @@ fn enforce_launch_with_config(
         "profile",
         "storageState",
         "restore",
-        "executablePath",
     ]
     .iter()
     .any(|key| command.get(key).is_some())
     {
         return Err("network policy refuses attached or externally managed browsers");
+    }
+    // Only the host chooses the binary. A launch may repeat the host's own
+    // executable (hosts send it with each session) but not name another.
+    if let Some(requested) = command.get("executablePath")
+        && (host_executable.is_none() || requested.as_str() != host_executable)
+    {
+        return Err("network policy refuses a browser executable the host did not configure");
     }
     if command
         .get("args")
@@ -237,6 +283,15 @@ fn enforce_launch_with_config(
         .is_some_and(|args| !args.is_empty())
     {
         return Err("network policy refuses caller-supplied browser launch arguments");
+    }
+    // agent-browser runs plugins and loads extensions and init scripts after
+    // this module's proxy and resolver arguments, so any of them could undo
+    // egress enforcement.
+    if ["plugins", "extensions", "initScripts"]
+        .iter()
+        .any(|key| command.get(key).is_some())
+    {
+        return Err("network policy refuses caller-supplied plugins, extensions and init scripts");
     }
     if has_ambient_browser_config {
         return Err("network policy refuses ambient external browser configuration");
@@ -250,6 +305,10 @@ fn enforce_launch_with_config(
         "password": proxy_password
     });
     command["engine"] = json!("chrome");
+    // The enforced flags above do not depend on which Chrome binary runs.
+    if let Some(executable) = host_executable {
+        command["executablePath"] = json!(executable);
+    }
     command["args"] = json!([
         "--disable-quic",
         "--disable-http2",
@@ -259,18 +318,32 @@ fn enforce_launch_with_config(
     Ok(command)
 }
 
+/// agent-browser environment variables that can attach another browser or
+/// change how the egress-enforced one launches. Plugins, extensions, extra
+/// arguments and init scripts are applied after this module's proxy and
+/// resolver arguments, so any of them could undo egress enforcement.
+const AMBIENT_BROWSER_ENV: &[&str] = &[
+    "AGENT_BROWSER_CDP",
+    "AGENT_BROWSER_AUTO_CONNECT",
+    "AGENT_BROWSER_PROVIDER",
+    "AGENT_BROWSER_ENGINE",
+    "AGENT_BROWSER_EXECUTABLE_PATH",
+    "AGENT_BROWSER_PROXY",
+    "AGENT_BROWSER_PROXY_BYPASS",
+    "AGENT_BROWSER_PROXY_USERNAME",
+    "AGENT_BROWSER_PROXY_PASSWORD",
+    "AGENT_BROWSER_PROFILE",
+    "AGENT_BROWSER_RESTORE",
+    "AGENT_BROWSER_PLUGINS",
+    "AGENT_BROWSER_EXTENSIONS",
+    "AGENT_BROWSER_ARGS",
+    "AGENT_BROWSER_INIT_SCRIPTS",
+];
+
 fn has_ambient_browser_config() -> bool {
-    std::env::var_os("AGENT_BROWSER_CDP").is_some()
-        || std::env::var_os("AGENT_BROWSER_AUTO_CONNECT").is_some()
-        || std::env::var_os("AGENT_BROWSER_PROVIDER").is_some()
-        || std::env::var_os("AGENT_BROWSER_ENGINE").is_some()
-        || std::env::var_os("AGENT_BROWSER_EXECUTABLE_PATH").is_some()
-        || std::env::var_os("AGENT_BROWSER_PROXY").is_some()
-        || std::env::var_os("AGENT_BROWSER_PROXY_BYPASS").is_some()
-        || std::env::var_os("AGENT_BROWSER_PROXY_USERNAME").is_some()
-        || std::env::var_os("AGENT_BROWSER_PROXY_PASSWORD").is_some()
-        || std::env::var_os("AGENT_BROWSER_PROFILE").is_some()
-        || std::env::var_os("AGENT_BROWSER_RESTORE").is_some()
+    AMBIENT_BROWSER_ENV
+        .iter()
+        .any(|name| std::env::var_os(name).is_some())
 }
 
 #[cfg(test)]

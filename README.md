@@ -174,6 +174,7 @@ scripts/docker-lab -- crates/tinycomputer-examples/fixtures/run task_fixture
 | `tinycomputer` | the loadable module |
 | `tinycomputer-engine` | tasks, the planner, rescues, the Jev runtime, the flow runtime |
 | `tinycomputer-bus` | the wire contract |
+| `tinycomputer-client` | typed, configuration-safe host calls |
 | `tinycomputer-core` | the shared screen model, safety rules, facts |
 | `tinycomputer-desktop` | desktop apps, through agent-desktop |
 | `tinycomputer-browser` | web pages, through agent-browser |

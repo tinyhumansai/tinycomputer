@@ -211,10 +211,40 @@ or false keeps the existing start behavior.
   those may be flattened into the message.
 - The envelope's wire form is byte-identical to the `agent-desktop` CLI's stdout
   envelope, version `2.5`, so a host needs one parser rather than two.
+- `DesktopResponse::into_data` checks `ENVELOPE_VERSION`, requires exactly one
+  consistent outcome (`ok` plus data, or not-ok plus error), and then decodes
+  the result. An inconsistent envelope never returns its data.
+- Agent members use `AgentResponse`, whose `version` is
+  `AGENT_ENVELOPE_VERSION`. `AgentResponse::into_data` applies the same version
+  and outcome checks before returning the typed value. Every module producer
+  uses the versioned constructor, including errors.
+
+### Module configuration and shared site names (2.29)
+
+- `tinycomputer_bus::config::ComputerConfig` is the typed serde contract for
+  host-supplied `jev`, `planner`, `browser`, and `trace_path` settings. Planner
+  wire types live here too and are re-exported by the engine; credentials are
+  redacted by `Debug` and the module receives them only through confidential
+  module configuration.
+- The module retains its existing loader-only extensions `session_id`,
+  `trace_strict`, `headed`, and `cursor`. They remain outside the shared host
+  config; the module adapter forwards them to their existing owners.
+- `browser.egress` is a private loader field, not part of `ComputerConfig`: an
+  object holding exactly a host-selected `policy_id` (1 to 64 bytes) and a
+  positive `generation`. It selects the egress-enforced launcher, whose dials
+  go through `BrowserEgressHost`, so it needs a module loaded with its host
+  callback connection. It is refused beside `browser.args`, which could undo
+  the enforced proxy flags. `browser.executable` is allowed: the enforced
+  launch runs that host-chosen binary with the same proxy and resolver flags,
+  and a launch may repeat it but never name another.
+- `tinycomputer_bus::sites::{site_of, site_named}` own the shared strict site
+  normalization used for site-memory keys and file names. URL parsing keeps
+  the WHATWG parser's IDNA and IP behavior; names reject adjacent dots and
+  names longer than 253 bytes.
 
 ### The contract crate
 
-- `tinycomputer-bus` depends on `thiserror`, `serde`, and `serde_json`. It may
+- `tinycomputer-bus` depends on `thiserror`, `serde`, `serde_json`, and `base64`. It may
   not depend on a transport, an async runtime, an HTTP client, a native library,
   or the engine. CI asserts the resolved dependency tree.
 - It mirrors the engine's enumerations by wire form rather than importing them,
@@ -237,12 +267,15 @@ or false keeps the existing start behavior.
 
 ### Configuration and concurrency
 
-- The module's configuration is a JSON object with optional `session_id` and
-  `trace_path` strings, `trace_strict` and `headed` booleans, an optional
-  `trace_sink` object containing the host-prepared unique callback destination, and a `jev`
-  object containing provider configuration and its API key. `null` and `{}`
-  yield desktop defaults with Jev disabled; invalid recognized fields fail
-  before the served object is replaced.
+- The module's configuration is `null` or a JSON object. Its host fields decode
+  as `ComputerConfig`: `jev`, `planner`, and `browser` are omitted when unset,
+  and an explicit `null` for any of them is rejected; `trace_path` alone takes
+  `null` as unset. Beside them sit the loader-only `session_id`,
+  `trace_strict`, `headed`, and `cursor`, an optional `trace_sink` or
+  `consequence_host` object containing the host-prepared unique callback
+  destination, and the private `browser.egress`. `null` and `{}` yield desktop
+  defaults with Jev disabled; invalid recognized fields fail before the served
+  object is replaced.
 - TinyBus sensitive initialization and reinitialization carry the `jev` object.
   Reinitialization constructs the complete replacement service before
   `serve_at`, so a rejected key, endpoint, or desktop field leaves the existing

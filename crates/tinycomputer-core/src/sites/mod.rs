@@ -28,6 +28,19 @@ use tinycomputer_bus::agent::TaskReport;
 use tinycomputer_bus::site_memory::{SavedHint, SavedPlan, SiteMemory};
 use tinycomputer_bus::{Flow, GroundingHint};
 
+pub use tinycomputer_bus::sites::site_named;
+
+/// The normalized site name in an HTTP(S) URL, or `None` when the URL has no
+/// safe HTTP(S) host.
+#[must_use]
+pub fn site_of(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url.trim()).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return None;
+    }
+    site_named(parsed.host_str()?)
+}
+
 /// Most elements kept per site; the oldest go first.
 pub const MAX_HINTS: usize = 50;
 /// Most plans kept per site; the one finished on longest ago goes first.
@@ -112,31 +125,6 @@ impl Following {
             }
         }
     }
-}
-
-/// The site `url` belongs to: its host, lower-cased and without a leading
-/// `www.`; `None` for an address that is not `http(s)` or names no plain
-/// host.
-#[must_use]
-pub fn site_of(url: &str) -> Option<String> {
-    let parsed = url::Url::parse(url.trim()).ok()?;
-    if !matches!(parsed.scheme(), "http" | "https") {
-        return None;
-    }
-    site_named(parsed.host_str()?)
-}
-
-/// `host` as a site name, or `None` when it is not a plain host name.
-#[must_use]
-pub fn site_named(host: &str) -> Option<String> {
-    let host = host.trim().to_ascii_lowercase();
-    let host = host.strip_prefix("www.").unwrap_or(&host);
-    let plain = !host.is_empty()
-        && !host.starts_with('.')
-        && host
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '-'));
-    plain.then(|| host.to_owned())
 }
 
 /// A goal as plans are matched by: lower-cased, its whitespace collapsed.

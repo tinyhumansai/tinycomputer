@@ -11,6 +11,8 @@ publish = false
 [dependencies]
 tinycomputer = { path = "../tinycomputer" }
 tinycomputer-bus = { workspace = true }
+# Exercise the typed host API against the release artifact in verify_module.
+tinycomputer-client = { workspace = true }
 # `browser_fixture` drives a real browser through the linked agent-browser and
 # checks the shared domain logic against the travel fixture.
 tinycomputer-browser = { workspace = true, features = ["agent-browser"] }

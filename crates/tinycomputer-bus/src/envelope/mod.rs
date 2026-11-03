@@ -25,8 +25,8 @@
 mod types;
 
 pub use types::{
-    Delivery, DeliveryDisposition, DesktopError, DesktopResponse, ENVELOPE_VERSION, RecoveryHint,
-    RetryDisposition,
+    Delivery, DeliveryDisposition, DesktopError, DesktopResponse, DesktopResponseError,
+    ENVELOPE_VERSION, RecoveryHint, RetryDisposition,
 };
 
 #[cfg(test)]

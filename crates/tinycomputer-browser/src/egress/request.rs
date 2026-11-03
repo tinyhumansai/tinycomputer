@@ -160,6 +160,11 @@ fn parse_proxy_headers(
         .filter(|line| !line.is_empty())
     {
         let (name, value) = line.split_once(':')?;
+        // RFC 9112 forbids whitespace in or after a field name: a server
+        // could read `Content-Length : 5` as a header this check skipped.
+        if name.is_empty() || name.bytes().any(|byte| byte.is_ascii_whitespace()) {
+            return None;
+        }
         if name.eq_ignore_ascii_case("host") {
             if host_header.replace(value.trim().to_owned()).is_some() {
                 return None;
@@ -261,3 +266,7 @@ pub(crate) fn parse_authority(
         session_id: session_id.to_owned(),
     })
 }
+
+#[cfg(test)]
+#[path = "request_tests.rs"]
+mod tests;

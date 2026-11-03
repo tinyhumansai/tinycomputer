@@ -1,0 +1,27 @@
+[package]
+name = "tinycomputer-client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Typed TinyBus host client for TinyComputer"
+publish = false
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tinybus.workspace = true
+tinycomputer-bus.workspace = true
+# Calls sharing a configuration hold a read lock; changing it takes the write lock.
+tokio = { workspace = true, features = ["sync"] }
+
+[dev-dependencies]
+# The in-memory service fixtures implement TinyBus' asynchronous interface.
+async-trait = "0.1"
+tinybus-module = { workspace = true, features = ["static-link"] }
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

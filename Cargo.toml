@@ -18,7 +18,7 @@ exclude = ["vendor", "worktrees"]
 # true`, so the version the release workflow bumps is written in exactly one
 # place and every crate moves together.
 [workspace.package]
-version = "0.15.2"
+version = "0.16.0"
 edition = "2024"
 rust-version = "1.89"
 license = "GPL-3.0-only"
@@ -31,6 +31,9 @@ repository = "https://github.com/tinyhumansai/tinycomputer"
 # release, and a pinned requirement here would stop resolving the moment it did.
 # Nothing in this workspace is published, so the path is the whole address.
 tinycomputer-bus = { path = "crates/tinycomputer-bus" }
+# Host-side typed calls over TinyBus. Kept apart from the module implementation
+# so a host can depend on the wire contract and client without linking desktop engines.
+tinycomputer-client = { path = "crates/tinycomputer-client" }
 # Shared, engine-free domain logic: keys, safety, records, and facts. Taken by
 # the surface adapters and the engine.
 tinycomputer-core = { path = "crates/tinycomputer-core" }
@@ -74,13 +77,13 @@ agent-desktop-linux = { path = "vendor/agent-desktop/crates/linux" }
 # TinyBus defines the message types, interface macro, and frozen module ABI
 # used by the generated integration. Socket and CLI features are unnecessary
 # here.
-tinybus = { version = ">=0.3.6, <0.4", default-features = false, features = [
+tinybus = { version = ">=0.3.11, <0.4", default-features = false, features = [
     "macros",
     "modules",
 ] }
 # The module-side SDK owns the isolated runtime and exports the ABI entrypoints
 # required by TinyBus's dynamic loader.
-tinybus-module = { version = ">=0.3.6, <0.4" }
+tinybus-module = { version = ">=0.3.11, <0.4" }
 # Derive macros for the crate-wide error types, e.g.
 # `crates/tinycomputer-desktop/src/error/`.
 # Every dependency entry should carry a comment like this one saying why it is
