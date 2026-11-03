@@ -229,6 +229,12 @@ or false keeps the existing start behavior.
 - The module retains its existing loader-only extensions `session_id`,
   `trace_strict`, `headed`, and `cursor`. They remain outside the shared host
   config; the module adapter forwards them to their existing owners.
+- `browser.egress` is a private loader field, not part of `ComputerConfig`: an
+  object holding exactly a host-selected `policy_id` (1 to 64 bytes) and a
+  positive `generation`. It selects the egress-enforced launcher, whose dials
+  go through `BrowserEgressHost`, so it needs a module loaded with its host
+  callback connection. It is refused beside `browser.args` or
+  `browser.executable`, which an enforced launch cannot honour.
 - `tinycomputer_bus::sites::{site_of, site_named}` own the shared strict site
   normalization used for site-memory keys and file names. URL parsing keeps
   the WHATWG parser's IDNA and IP behavior; names reject adjacent dots and
@@ -236,7 +242,7 @@ or false keeps the existing start behavior.
 
 ### The contract crate
 
-- `tinycomputer-bus` depends on `thiserror`, `serde`, `serde_json`, and `url`. It may
+- `tinycomputer-bus` depends on `thiserror`, `serde`, `serde_json`, and `base64`. It may
   not depend on a transport, an async runtime, an HTTP client, a native library,
   or the engine. CI asserts the resolved dependency tree.
 - It mirrors the engine's enumerations by wire form rather than importing them,
@@ -259,12 +265,15 @@ or false keeps the existing start behavior.
 
 ### Configuration and concurrency
 
-- The module's configuration is a JSON object with optional `session_id` and
-  `trace_path` strings, `trace_strict` and `headed` booleans, an optional
-  `trace_sink` object containing the host-prepared unique callback destination, and a `jev`
-  object containing provider configuration and its API key. `null` and `{}`
-  yield desktop defaults with Jev disabled; invalid recognized fields fail
-  before the served object is replaced.
+- The module's configuration is `null` or a JSON object. Its host fields decode
+  as `ComputerConfig`: `jev`, `planner`, and `browser` are omitted when unset,
+  and an explicit `null` for any of them is rejected; `trace_path` alone takes
+  `null` as unset. Beside them sit the loader-only `session_id`,
+  `trace_strict`, `headed`, and `cursor`, an optional `trace_sink` or
+  `consequence_host` object containing the host-prepared unique callback
+  destination, and the private `browser.egress`. `null` and `{}` yield desktop
+  defaults with Jev disabled; invalid recognized fields fail before the served
+  object is replaced.
 - TinyBus sensitive initialization and reinitialization carry the `jev` object.
   Reinitialization constructs the complete replacement service before
   `serve_at`, so a rejected key, endpoint, or desktop field leaves the existing
