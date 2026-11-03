@@ -248,6 +248,15 @@ fn enforce_launch_with_config(
     {
         return Err("network policy refuses caller-supplied browser launch arguments");
     }
+    // agent-browser runs plugins and loads extensions and init scripts after
+    // this module's proxy and resolver arguments, so any of them could undo
+    // egress enforcement.
+    if ["plugins", "extensions", "initScripts"]
+        .iter()
+        .any(|key| command.get(key).is_some())
+    {
+        return Err("network policy refuses caller-supplied plugins, extensions and init scripts");
+    }
     if has_ambient_browser_config {
         return Err("network policy refuses ambient external browser configuration");
     }

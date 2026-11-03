@@ -75,3 +75,16 @@ fn ambient_plugins_extensions_args_and_init_scripts_refuse_the_launch() {
         assert!(AMBIENT_BROWSER_ENV.contains(&name), "{name}");
     }
 }
+
+#[test]
+fn enforced_launch_refuses_caller_plugins_extensions_and_init_scripts() {
+    for field in ["plugins", "extensions", "initScripts"] {
+        let mut command = json!({"action":"launch"});
+        command[field] = json!([]);
+        assert!(
+            enforce_launch_with_config(command, "http://127.0.0.1:39123", "session-secret", false)
+                .is_err(),
+            "{field} was accepted"
+        );
+    }
+}
