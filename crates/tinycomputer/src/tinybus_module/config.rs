@@ -114,10 +114,13 @@ impl BrowserDefaults {
             .and_then(serde_json::Value::as_u64)
             .filter(|generation| *generation > 0)
             .ok_or_else(invalid)?;
+        // The host's own `executable` stays allowed: the enforced launcher
+        // runs it with the proxy and resolver flags. Extra `args` could undo
+        // them, so they are refused.
         if object.len() != 2
-            || browser.as_object().is_some_and(|browser| {
-                browser.contains_key("args") || browser.contains_key("executable")
-            })
+            || browser
+                .as_object()
+                .is_some_and(|browser| browser.contains_key("args"))
         {
             return Err(invalid());
         }

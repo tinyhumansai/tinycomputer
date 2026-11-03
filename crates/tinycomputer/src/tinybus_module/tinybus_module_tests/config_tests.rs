@@ -213,14 +213,21 @@ fn the_browser_configuration_is_read_or_refused() {
     .unwrap();
     assert_eq!(egress.as_ref().unwrap().policy_id, "host-policy");
     assert_eq!(egress.as_ref().unwrap().generation, 7);
-    // An egress launch refuses `executablePath`, so the pair fails at load.
+    // The host's own executable loads beside egress; the enforced launcher
+    // runs it under the proxy.
+    let with_executable = json!({"browser": {
+        "executable": "/usr/bin/chromium",
+        "egress": {"policy_id": "host-policy", "generation": 7}
+    }});
     assert!(
-        BrowserDefaults::egress_from_raw(&json!({"browser": {
-            "executable": "/usr/bin/chromium",
-            "egress": {"policy_id": "host-policy", "generation": 7}
-        }}))
-        .is_err()
+        BrowserDefaults::egress_from_raw(&with_executable)
+            .unwrap()
+            .is_some()
     );
+    assert!(serde_json::from_value::<ComputerConfig>(json!({"browser": {
+        "executable": "/usr/bin/chromium"
+    }}))
+    .is_ok());
     // Settling promptly and opening the browser early are on unless turned
     // off.
     let unset = BrowserDefaults::default();

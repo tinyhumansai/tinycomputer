@@ -117,9 +117,18 @@ impl DesktopService {
         let egress = BrowserDefaults::egress_from_raw(config)
             .map_err(|error| TinyBusError::failed(error.to_string()))?;
         let browser = if let Some(egress) = &egress {
-            Arc::new(Browser::new(Arc::new(EnforcedAgentBrowser::new(Arc::new(
-                BusAuthorizer::new(connection.clone(), egress.policy_id.clone(), egress.generation),
-            )))))
+            let executable = computer_config(config)
+                .map_err(|error| TinyBusError::failed(error.to_string()))?
+                .browser
+                .and_then(|browser| browser.executable);
+            Arc::new(Browser::new(Arc::new(
+                EnforcedAgentBrowser::new(Arc::new(BusAuthorizer::new(
+                    connection.clone(),
+                    egress.policy_id.clone(),
+                    egress.generation,
+                )))
+                .with_executable(executable),
+            )))
         } else {
             Arc::new(Browser::new(Arc::new(AgentBrowser)))
         };

@@ -30,6 +30,7 @@ pub struct AgentBrowser;
 #[derive(Clone)]
 pub struct EnforcedAgentBrowser {
     authorizer: Arc<dyn EgressAuthorizer>,
+    executable: Option<String>,
 }
 
 impl std::fmt::Debug for EnforcedAgentBrowser {
@@ -42,7 +43,18 @@ impl EnforcedAgentBrowser {
     /// Use the authenticated host callback for every launched session.
     #[must_use]
     pub fn new(authorizer: Arc<dyn EgressAuthorizer>) -> Self {
-        Self { authorizer }
+        Self {
+            authorizer,
+            executable: None,
+        }
+    }
+
+    /// Launch the host-configured Chrome or Chromium binary. It is host
+    /// control, like the proxy: a launch may repeat it but never name another.
+    #[must_use]
+    pub fn with_executable(mut self, executable: Option<String>) -> Self {
+        self.executable = executable;
+        self
     }
 }
 
@@ -54,6 +66,7 @@ impl Launcher for AgentBrowser {
             proxy: None,
             proxy_session_id: String::new(),
             proxy_password: String::new(),
+            host_executable: None,
             enforced_launch: false,
         })
     }
@@ -61,7 +74,9 @@ impl Launcher for AgentBrowser {
 
 impl Launcher for EnforcedAgentBrowser {
     fn open(&self, session: &str) -> Box<dyn Engine> {
-        Box::new(enforced(self.authorizer.clone(), session))
+        let mut engine = enforced(self.authorizer.clone(), session);
+        engine.host_executable.clone_from(&self.executable);
+        Box::new(engine)
     }
 }
 
@@ -75,6 +90,7 @@ fn enforced(authorizer: Arc<dyn EgressAuthorizer>, session: &str) -> Linked {
         proxy: None,
         proxy_session_id: private_session_id(),
         proxy_password: private_session_id(),
+        host_executable: None,
         enforced_launch: false,
     }
 }
@@ -85,6 +101,7 @@ struct Linked {
     proxy: Option<EgressProxy>,
     proxy_session_id: String,
     proxy_password: String,
+    host_executable: Option<String>,
     enforced_launch: bool,
 }
 
@@ -123,7 +140,12 @@ impl Engine for Linked {
                 let Some(proxy) = self.proxy.as_ref() else {
                     return failure_reply(&command, "network policy proxy could not start");
                 };
-                match enforce_launch(command.clone(), &proxy.url(), &self.proxy_password) {
+                match enforce_launch(
+                    command.clone(),
+                    &proxy.url(),
+                    &self.proxy_password,
+                    self.host_executable.as_deref(),
+                ) {
                     Ok(command) => command,
                     Err(reason) => return failure_reply(&command, reason),
                 }
@@ -210,11 +232,18 @@ fn enforce_launch(
     command: Value,
     proxy: &str,
     proxy_password: &str,
+    host_executable: Option<&str>,
 ) -> Result<Value, &'static str> {
     let has_ambient_browser_config = command.get("action").and_then(Value::as_str)
         == Some("launch")
         && has_ambient_browser_config();
-    enforce_launch_with_config(command, proxy, proxy_password, has_ambient_browser_config)
+    enforce_launch_with_config(
+        command,
+        proxy,
+        proxy_password,
+        has_ambient_browser_config,
+        host_executable,
+    )
 }
 
 fn enforce_launch_with_config(
@@ -222,6 +251,7 @@ fn enforce_launch_with_config(
     proxy: &str,
     proxy_password: &str,
     has_ambient_browser_config: bool,
+    host_executable: Option<&str>,
 ) -> Result<Value, &'static str> {
     if command.get("action").and_then(Value::as_str) != Some("launch") {
         return Ok(command);
@@ -234,12 +264,18 @@ fn enforce_launch_with_config(
         "profile",
         "storageState",
         "restore",
-        "executablePath",
     ]
     .iter()
     .any(|key| command.get(key).is_some())
     {
         return Err("network policy refuses attached or externally managed browsers");
+    }
+    // Only the host chooses the binary. A launch may repeat the host's own
+    // executable (hosts send it with each session) but not name another.
+    if let Some(requested) = command.get("executablePath")
+        && (host_executable.is_none() || requested.as_str() != host_executable)
+    {
+        return Err("network policy refuses a browser executable the host did not configure");
     }
     if command
         .get("args")
@@ -269,6 +305,10 @@ fn enforce_launch_with_config(
         "password": proxy_password
     });
     command["engine"] = json!("chrome");
+    // The enforced flags above do not depend on which Chrome binary runs.
+    if let Some(executable) = host_executable {
+        command["executablePath"] = json!(executable);
+    }
     command["args"] = json!([
         "--disable-quic",
         "--disable-http2",

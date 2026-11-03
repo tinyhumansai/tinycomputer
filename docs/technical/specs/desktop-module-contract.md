@@ -233,8 +233,10 @@ or false keeps the existing start behavior.
   object holding exactly a host-selected `policy_id` (1 to 64 bytes) and a
   positive `generation`. It selects the egress-enforced launcher, whose dials
   go through `BrowserEgressHost`, so it needs a module loaded with its host
-  callback connection. It is refused beside `browser.args` or
-  `browser.executable`, which an enforced launch cannot honour.
+  callback connection. It is refused beside `browser.args`, which could undo
+  the enforced proxy flags. `browser.executable` is allowed: the enforced
+  launch runs that host-chosen binary with the same proxy and resolver flags,
+  and a launch may repeat it but never name another.
 - `tinycomputer_bus::sites::{site_of, site_named}` own the shared strict site
   normalization used for site-memory keys and file names. URL parsing keeps
   the WHATWG parser's IDNA and IP behavior; names reject adjacent dots and

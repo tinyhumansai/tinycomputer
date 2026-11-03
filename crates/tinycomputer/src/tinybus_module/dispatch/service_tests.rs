@@ -59,3 +59,25 @@ fn module_rejects_null_shared_sections_but_preserves_nullable_trace_path() {
         .expect("null trace path keeps the desktop's unset behavior");
     assert!(!service.desktop.is_tracing());
 }
+
+#[tokio::test]
+async fn a_host_executable_beside_egress_loads_the_enforced_service() {
+    let bus = tinybus::transport::memory::MemoryBus::new();
+    tinybus::broker::Broker::new().spawn(bus.clone());
+    let connection = tinybus::Connection::connect(bus.connect().await.expect("transport"))
+        .await
+        .expect("module connection");
+    let service = DesktopService::from_config_with_connection(
+        &json!({"browser": {
+            "executable": "/opt/host/chrome",
+            "egress": {"policy_id": "host-policy", "generation": 7}
+        }}),
+        connection,
+    )
+    .expect("host executable and egress load together");
+    assert_eq!(
+        service.browser_defaults.executable.as_deref(),
+        Some("/opt/host/chrome")
+    );
+    assert!(service.browser_defaults.egress.is_some());
+}
