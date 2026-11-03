@@ -207,12 +207,20 @@ fn the_browser_configuration_is_read_or_refused() {
     assert_eq!(defaults.perception, Perception::Tree);
     assert_eq!(defaults.settle, Settle::Steady);
     assert!(!defaults.prelaunch);
-    let egress = BrowserDefaults::from_config(&json!({"browser": {
+    let egress = BrowserDefaults::egress_from_raw(&json!({"browser": {
         "egress": {"policy_id": "host-policy", "generation": 7}
     }}))
     .unwrap();
-    assert_eq!(egress.egress.as_ref().unwrap().policy_id, "host-policy");
-    assert_eq!(egress.egress.as_ref().unwrap().generation, 7);
+    assert_eq!(egress.as_ref().unwrap().policy_id, "host-policy");
+    assert_eq!(egress.as_ref().unwrap().generation, 7);
+    // An egress launch refuses `executablePath`, so the pair fails at load.
+    assert!(
+        BrowserDefaults::egress_from_raw(&json!({"browser": {
+            "executable": "/usr/bin/chromium",
+            "egress": {"policy_id": "host-policy", "generation": 7}
+        }}))
+        .is_err()
+    );
     // Settling promptly and opening the browser early are on unless turned
     // off.
     let unset = BrowserDefaults::default();
