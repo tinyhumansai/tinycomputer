@@ -240,23 +240,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err(io::Error::other("manifest members differ from contract").into());
     }
     verify_globe_lifecycle(&proxy).await?;
-
-    // Wrong-arity inputs stay safe even if a confidentiality guard regresses.
-    for member in [
-        names::accessibility::ACCESSIBILITY_FOCUS,
-        names::accessibility::ACCESSIBILITY_VALIDATE_TARGET,
-        names::accessibility::ACCESSIBILITY_PASTE,
-    ] {
-        let reply = proxy
-            .call::<DesktopResponse>(member, serde_json::json!([]))
-            .await;
-        if !matches!(reply, Err(tinybus::Error::MethodFailed { name, .. }) if name == tinybus::Error::CONFIDENTIALITY_REQUIRED)
-        {
-            return Err(
-                io::Error::other("native member failed to require confidential delivery").into(),
-            );
-        }
-    }
+    verify_confidential_arity(&proxy).await?;
 
     println!(
         "verified {} as TinyBus module `{}`, serving {} members",
@@ -397,6 +381,28 @@ async fn verify_report_sink(
     };
     if !expected_failure {
         return Err(io::Error::other("task report sink failure was not returned").into());
+    }
+    Ok(())
+}
+
+/// Wrong-arity inputs stay safe even if a confidentiality guard regresses.
+async fn verify_confidential_arity(
+    proxy: &tinybus::Proxy,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for member in [
+        names::accessibility::ACCESSIBILITY_FOCUS,
+        names::accessibility::ACCESSIBILITY_VALIDATE_TARGET,
+        names::accessibility::ACCESSIBILITY_PASTE,
+    ] {
+        let reply = proxy
+            .call::<DesktopResponse>(member, serde_json::json!([]))
+            .await;
+        if !matches!(reply, Err(tinybus::Error::MethodFailed { name, .. }) if name == tinybus::Error::CONFIDENTIALITY_REQUIRED)
+        {
+            return Err(
+                io::Error::other("native member failed to require confidential delivery").into(),
+            );
+        }
     }
     Ok(())
 }
