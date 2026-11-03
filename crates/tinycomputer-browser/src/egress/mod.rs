@@ -15,15 +15,6 @@ mod forward;
 mod request;
 mod serve;
 
-/// Fixture-only replacement for the final TCP connect in host integration tests.
-///
-/// The callback receives the exact socket selected by authorization and grant
-/// consumption. Test connectors should map it to a local fixture only.
-#[cfg(feature = "test-connector")]
-pub type TestConnector = Arc<
-    dyn Fn(SocketAddr) -> Pin<Box<dyn Future<Output = io::Result<TcpStream>> + Send>> + Send + Sync,
->;
-
 #[cfg(test)]
 pub(crate) use serve::connect_approved_addresses;
 
@@ -104,45 +95,6 @@ impl EgressProxy {
         session_id: String,
         proxy_password: String,
     ) -> io::Result<Self> {
-        Self::bind_inner(authorizer, session_id, proxy_password, TcpStream::connect).await
-    }
-
-    /// Bind the production proxy path with a fixture-only final socket connector.
-    ///
-    /// This feature-gated seam is for host integration tests that need to keep
-    /// policy authorization and one-use grant consumption real while mapping an
-    /// approved public socket operation onto a local fixture listener. The
-    /// connector receives the exact socket address after authorization and
-    /// consumption; it must not make public network connections.
-    ///
-    /// # Errors
-    ///
-    /// Returns an I/O error when the proxy listener cannot bind or its address
-    /// cannot be read.
-    #[cfg(feature = "test-connector")]
-    pub async fn bind_with_test_connector<C, F>(
-        authorizer: Arc<dyn EgressAuthorizer>,
-        session_id: String,
-        proxy_password: String,
-        connector: C,
-    ) -> io::Result<Self>
-    where
-        C: Fn(SocketAddr) -> F + Clone + Send + Sync + 'static,
-        F: Future<Output = io::Result<TcpStream>> + Send + 'static,
-    {
-        Self::bind_inner(authorizer, session_id, proxy_password, connector).await
-    }
-
-    async fn bind_inner<C, F>(
-        authorizer: Arc<dyn EgressAuthorizer>,
-        session_id: String,
-        proxy_password: String,
-        connector: C,
-    ) -> io::Result<Self>
-    where
-        C: Fn(SocketAddr) -> F + Clone + Send + Sync + 'static,
-        F: Future<Output = io::Result<TcpStream>> + Send + 'static,
-    {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
         let address = listener.local_addr()?;
         let task = tokio::spawn(async move {
@@ -154,16 +106,8 @@ impl EgressProxy {
                         let auth = authorizer.clone();
                         let session = session_id.clone();
                         let password = proxy_password.clone();
-                        let connector = connector.clone();
                         connections.spawn(async move {
-                            let _ = Box::pin(serve::serve_with_connector(
-                                stream,
-                                auth,
-                                session,
-                                password,
-                                connector,
-                            ))
-                            .await;
+                            let _ = Box::pin(serve::serve(stream, auth, session, password)).await;
                         });
                     }
                     _ = connections.join_next(), if !connections.is_empty() => {}

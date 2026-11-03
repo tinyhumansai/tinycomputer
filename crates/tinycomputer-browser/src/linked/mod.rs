@@ -30,8 +30,6 @@ pub struct AgentBrowser;
 #[derive(Clone)]
 pub struct EnforcedAgentBrowser {
     authorizer: Arc<dyn EgressAuthorizer>,
-    #[cfg(feature = "test-connector")]
-    test_connector: Option<crate::egress::TestConnector>,
 }
 
 impl std::fmt::Debug for EnforcedAgentBrowser {
@@ -44,23 +42,7 @@ impl EnforcedAgentBrowser {
     /// Use the authenticated host callback for every launched session.
     #[must_use]
     pub fn new(authorizer: Arc<dyn EgressAuthorizer>) -> Self {
-        Self {
-            authorizer,
-            #[cfg(feature = "test-connector")]
-            test_connector: None,
-        }
-    }
-
-    /// Replace only the final TCP connect for a fixture-backed host test.
-    ///
-    /// Authorization, grant consumption, and proxy forwarding remain on their
-    /// normal paths. The fixture connector receives the exact approved socket
-    /// and must map it to a local listener rather than public network access.
-    #[cfg(feature = "test-connector")]
-    #[must_use]
-    pub fn with_test_connector(mut self, connector: crate::egress::TestConnector) -> Self {
-        self.test_connector = Some(connector);
-        self
+        Self { authorizer }
     }
 }
 
@@ -72,8 +54,6 @@ impl Launcher for AgentBrowser {
             proxy: None,
             proxy_session_id: String::new(),
             enforced_launch: false,
-            #[cfg(feature = "test-connector")]
-            test_connector: None,
         })
     }
 }
@@ -86,8 +66,6 @@ impl Launcher for EnforcedAgentBrowser {
             proxy: None,
             proxy_session_id: private_session_id(),
             enforced_launch: false,
-            #[cfg(feature = "test-connector")]
-            test_connector: self.test_connector.clone(),
         })
     }
 }
@@ -98,32 +76,6 @@ struct Linked {
     proxy: Option<EgressProxy>,
     proxy_session_id: String,
     enforced_launch: bool,
-    #[cfg(feature = "test-connector")]
-    test_connector: Option<crate::egress::TestConnector>,
-}
-
-impl Linked {
-    async fn bind_egress_proxy(
-        &self,
-        authorizer: Arc<dyn EgressAuthorizer>,
-    ) -> std::io::Result<EgressProxy> {
-        #[cfg(feature = "test-connector")]
-        if let Some(connector) = self.test_connector.clone() {
-            return EgressProxy::bind_with_test_connector(
-                authorizer,
-                self.proxy_session_id.clone(),
-                self.proxy_session_id.clone(),
-                move |address| connector(address),
-            )
-            .await;
-        }
-        EgressProxy::bind(
-            authorizer,
-            self.proxy_session_id.clone(),
-            self.proxy_session_id.clone(),
-        )
-        .await
-    }
 }
 
 impl Engine for Linked {
@@ -145,7 +97,13 @@ impl Engine for Linked {
                     return failure_reply(&command, "network policy has no host authorizer");
                 };
                 if self.proxy.is_none() {
-                    match self.bind_egress_proxy(authorizer).await {
+                    match EgressProxy::bind(
+                        authorizer,
+                        self.proxy_session_id.clone(),
+                        self.proxy_session_id.clone(),
+                    )
+                    .await
+                    {
                         Ok(proxy) => self.proxy = Some(proxy),
                         Err(_) => {
                             return failure_reply(&command, "network policy proxy could not start");
@@ -211,12 +169,7 @@ impl Engine for Linked {
 
 fn private_session_id() -> String {
     let mut bytes = [0u8; 24];
-    let entropy_succeeded = getrandom::fill(&mut bytes).is_ok();
-    private_session_id_from_entropy(bytes, entropy_succeeded)
-}
-
-fn private_session_id_from_entropy(bytes: [u8; 24], entropy_succeeded: bool) -> String {
-    if !entropy_succeeded {
+    if getrandom::fill(&mut bytes).is_err() {
         return String::new();
     }
     bytes

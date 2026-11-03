@@ -60,8 +60,8 @@ pub struct ReviewActionRequest {
     pub target: String,
     /// What the module classified the action as.
     pub kind: ConsequenceKind,
-    /// Opaque host-issued context from `ContinueTask`. The module relays it
-    /// unchanged and grants it no authority.
+    /// Opaque host-issued context from the `ContinueTask` request. The module
+    /// relays this value unchanged and grants it no authority.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_context: Option<HostContext>,
 }

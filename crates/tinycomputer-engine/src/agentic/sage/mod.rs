@@ -93,6 +93,8 @@ impl super::Evaluator for SageEvaluator {
                             .as_ref()
                             .map(|usage| usage.billed_input_tokens),
                         output_tokens: None,
+                        cached_input_tokens: None,
+                        cost_usd_nanos: None,
                     },
                 },
                 request_id: None,

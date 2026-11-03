@@ -103,7 +103,7 @@ impl<B: AgentBackend + Sync> FlowRun<'_, B> {
 
     /// Notes something the run chose or entered, for the brief's `so_far`.
     pub(in crate::agentic::flow) fn remember_choice(&mut self, note: &str) {
-        self.so_far.push(self.secrets.mask(note));
+        self.so_far.push(self.redact_text(note));
         if self.so_far.len() > MAX_SO_FAR {
             self.so_far.remove(0);
         }

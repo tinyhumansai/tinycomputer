@@ -34,6 +34,7 @@ mod pick_tests;
 mod picker_tests;
 mod quorum_tests;
 mod reflection_tests;
+mod secret_tests;
 mod split_tests;
 mod step_kinds_tests;
 mod suggestion_tests;
@@ -82,6 +83,7 @@ use super::{
     view::{self, Candidate, Depth, Screen},
     vote, wide,
 };
+use crate::{SecretHost, run_flow_with_host};
 
 fn runtime(client: impl Evaluator + 'static) -> JevRuntime {
     JevRuntime {
@@ -92,9 +94,11 @@ fn runtime(client: impl Evaluator + 'static) -> JevRuntime {
             endpoint_url: None,
             fast: false,
         },
+        #[cfg(feature = "desktop")]
         pending: Arc::default(),
         journal: crate::agentic::journal::Journal::default(),
         copies: Arc::default(),
+        usage: None,
     }
 }
 
@@ -108,6 +112,16 @@ async fn run_with(
     app: App,
     flow: Value,
     configure: impl FnOnce(&mut RunFlowRequest),
+    hook: impl Fn(&str, &Question, &Sim) -> Option<Answer> + Send + Sync + 'static,
+) -> Run {
+    run_with_secret_host(app, flow, configure, None, hook).await
+}
+
+async fn run_with_secret_host(
+    app: App,
+    flow: Value,
+    configure: impl FnOnce(&mut RunFlowRequest),
+    secret_host: Option<Arc<dyn SecretHost>>,
     hook: impl Fn(&str, &Question, &Sim) -> Option<Answer> + Send + Sync + 'static,
 ) -> Run {
     let oracle = Arc::new(Oracle {
@@ -124,9 +138,11 @@ async fn run_with(
             endpoint_url: None,
             fast: false,
         },
+        #[cfg(feature = "desktop")]
         pending: Arc::default(),
         journal: crate::agentic::journal::Journal::default(),
         copies: Arc::default(),
+        usage: None,
     };
     // One framing per decision, so every test that counts requests counts
     // decisions; voting has its own tests.
@@ -138,7 +154,10 @@ async fn run_with(
         ..RunFlowRequest::default()
     };
     configure(&mut request);
-    let reply = run_flow_with(app.clone(), &runtime, request).await;
+    if secret_host.is_some() {
+        request.task_id = Some("t-secret".to_owned());
+    }
+    let reply = run_flow_with_host(app.clone(), &runtime, request, secret_host).await;
     assert!(reply.ok, "flow run failed: {:?}", reply.error);
     let requests = oracle.requests.lock().unwrap().clone();
     Run {

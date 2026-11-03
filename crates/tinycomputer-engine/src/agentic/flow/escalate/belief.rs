@@ -85,11 +85,13 @@ impl<B: AgentBackend + Sync> FlowRun<'_, B> {
             })
         });
         if self.tracing {
+            let mut answers = serde_json::to_value(vote::tally(&fresh)).unwrap_or_default();
+            super::super::secret::redact_value(&mut answers, &|text| self.redact_text(text));
             self.trace.push(JevExchange {
                 step: self.step.clone(),
                 state: prepared.state,
                 questions: serde_json::to_value(&prepared.questions).unwrap_or_default(),
-                answers: serde_json::to_value(vote::tally(&fresh)).unwrap_or_default(),
+                answers,
             });
         }
         let ballots = request

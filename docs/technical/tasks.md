@@ -163,6 +163,9 @@ is acted on: `deep` (the default), `standard`, or `off`
 ([`specs/jev-deliberation.md`](specs/jev-deliberation.md)). Deliberation
 spends calls only where the evidence is thin, and degrades rung by rung when
 the budget runs short rather than failing the run.
+`budget.max_do_turns` sets how many turns each `do` step may spend before it
+fails as not accomplished: 8 when unset, at most 32. A long step on a busy
+page, such as a shop's cart or checkout, may need more than 8 moves.
 `budget.max_rescues` caps how many failed steps are rescued (below).
 The flow runtime has no clock, so `max_elapsed_ms` is enforced by
 the controller, which times out a run that would go past what is left. Time
@@ -242,6 +245,21 @@ follows three rules:
    never make one of these shared, and naming a secret that is not a fact is
    refused with `UNKNOWN_SECRET`. Card details are typed only under
    `payment: "fill_then_approve"`, which requires `origins` (below).
+4. A host that must keep a secret value outside the engine supplies
+   `fact_handles` instead of putting that value in `facts`. Each entry is
+   keyed by the flow's fact name and contains an opaque `handle`, a safe
+   `mask`, and a host-defined `kind`. The embedding configures
+   `BrowserRunner::with_secret_host`; at type time the engine passes that host
+   the handle, the selected field's role, name and reference, the live page
+   URL, the task id, and the remaining action budget. The host checks its own
+   site, field and budget policy, then types the value or refuses without
+   typing anything. For `fill_then_approve`, the same host types card fields
+   after the engine maps them. The engine redacts host-held values from page
+   observations, model exchanges, traces, and reports through the host's
+   `redact` method. Without a configured host, a handle is refused. Existing
+   value facts keep their current behavior. Reports for tasks carrying handles
+   configured with any `SecretHost` omits screenshot artifacts, since pixels
+   cannot be redacted as text.
 
 ## Payment is a checkpoint, unless the caller opted out
 

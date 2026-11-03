@@ -39,6 +39,7 @@ url = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt", "time", "net", "io-util"] }
 # Whether the process a Chrome profile lock names is alive.
 sysinfo = { workspace = true }
+# Report transient browser proxy listener errors without stopping the session.
 log = { workspace = true }
 
 # The linked engine, with the `agent-browser` feature. Without it the crate
@@ -49,7 +50,6 @@ agent-browser = { workspace = true, optional = true }
 default = []
 # Link agent-browser in-process and provide `AgentBrowser`, its `Launcher`.
 agent-browser = ["dep:agent-browser"]
-test-connector = []
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

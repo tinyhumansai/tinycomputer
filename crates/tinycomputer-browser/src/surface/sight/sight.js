@@ -76,6 +76,18 @@
     }
     return false;
   };
+  const PRIVATE_FIELD_ROLES = [
+    'textbox', 'searchbox', 'combobox', 'textarea', 'document', 'spinbutton',
+    'checkbox', 'radio', 'switch', 'menuitemcheckbox', 'menuitemradio',
+  ];
+  const privateField = (element) => ['input', 'select', 'textarea'].includes(tag(element))
+    || takesText(element) || PRIVATE_FIELD_ROLES.includes(role(element));
+  const insidePrivateField = (element) => {
+    for (let parent = element; parent; parent = parent.parentElement) {
+      if (privateField(parent)) return true;
+    }
+    return false;
+  };
 
   // A box that takes typed text: a text-like input, a text area, or the
   // outermost editable region. Whatever role the page gives it.
@@ -1204,7 +1216,8 @@
       const parent = node.parentElement;
       if (!parent || !squash(node.data) || texts >= limits.texts) continue;
       if (lastText && lastText.contains(parent)) continue;
-      if (controls.has(parent) || insideControl(parent) || insideText(parent) || !shown(parent)) continue;
+      if (controls.has(parent) || insideControl(parent) || insideText(parent) || !shown(parent)
+        || (limits.hideFormValues && insidePrivateField(parent))) continue;
       const rect = box(parent);
       if (rect.bottom < -height || rect.top > 2 * height) continue;
       const dropped = noiseRoot(parent);
@@ -1218,6 +1231,7 @@
       continue;
     }
     const element = node;
+    if (limits.hideFormValues && insidePrivateField(element.parentElement)) continue;
     const dropped = noiseRoot(element);
     // An ad's own frame or picture is an ad whether or not it shows words.
     if (dropped === element && ['iframe', 'img'].includes(tag(element))
@@ -1308,7 +1322,7 @@
       role: what,
       name,
       description,
-      value: valueOf(element, what),
+      value: limits.hideFormValues && privateField(element) ? '' : valueOf(element, what),
       states: statesOf(element, what),
       box: [box(element).x, box(element).y, box(element).width, box(element).height].map(Math.round),
       path: pathOf(element),

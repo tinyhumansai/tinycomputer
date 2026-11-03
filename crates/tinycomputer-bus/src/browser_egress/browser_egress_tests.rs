@@ -24,35 +24,81 @@ fn browser_callback_contract_has_no_http_payload_or_caller_selected_addresses() 
             "port": 443
         })
     );
-    assert_eq!(format!("{target:?}"), "BrowserEgressTarget([REDACTED])");
     let grant = BrowserEgressGrant {
         generation: 8,
         authorization: "opaque serialized TinySecurity grant".into(),
         addresses: vec!["203.0.113.8:443".into()],
     };
+    assert_eq!(
+        serde_json::to_value(&grant).unwrap(),
+        serde_json::json!({
+            "generation": 8,
+            "authorization": "opaque serialized TinySecurity grant",
+            "addresses": ["203.0.113.8:443"]
+        })
+    );
     let consume = BrowserEgressConsumeRequest {
         target: target.clone(),
-        authorization: grant.authorization.clone(),
-        address: grant.addresses[0].clone(),
+        authorization: "opaque serialized TinySecurity grant".into(),
+        address: "203.0.113.8:443".into(),
     };
-    let validate = BrowserEgressValidateRequest {
-        authorization: grant.authorization.clone(),
-    };
-    let decision = BrowserEgressDecision { allowed: true };
-
-    assert_eq!(METHODS, ["Authorize", "Consume", "Validate"]);
     assert_eq!(
-        serde_json::to_value(&consume).unwrap()["address"],
-        "203.0.113.8:443"
+        serde_json::to_value(&consume).unwrap(),
+        serde_json::json!({
+            "target": {
+                "policy_id": "private-policy",
+                "expected_generation": 8,
+                "session_id": "private-session",
+                "scheme": "https",
+                "hostname": "example.test",
+                "port": 443
+            },
+            "authorization": "opaque serialized TinySecurity grant",
+            "address": "203.0.113.8:443"
+        })
     );
+    let validate = BrowserEgressValidateRequest {
+        authorization: "opaque serialized TinySecurity grant".into(),
+    };
     assert_eq!(
         serde_json::to_value(&validate).unwrap(),
         serde_json::json!({ "authorization": "opaque serialized TinySecurity grant" })
     );
+    let decision = BrowserEgressDecision { allowed: true };
     assert_eq!(
         serde_json::to_value(decision).unwrap(),
         serde_json::json!({ "allowed": true })
     );
+    assert_eq!(
+        serde_json::from_value::<BrowserEgressTarget>(serde_json::to_value(&target).unwrap())
+            .unwrap(),
+        target
+    );
+    assert_eq!(
+        serde_json::from_value::<BrowserEgressGrant>(serde_json::to_value(&grant).unwrap())
+            .unwrap(),
+        grant
+    );
+    assert_eq!(
+        serde_json::from_value::<BrowserEgressConsumeRequest>(
+            serde_json::to_value(&consume).unwrap()
+        )
+        .unwrap(),
+        consume
+    );
+    assert_eq!(
+        serde_json::from_value::<BrowserEgressValidateRequest>(
+            serde_json::to_value(&validate).unwrap()
+        )
+        .unwrap(),
+        validate
+    );
+    assert_eq!(
+        serde_json::from_value::<BrowserEgressDecision>(serde_json::to_value(decision).unwrap())
+            .unwrap(),
+        decision
+    );
+    assert_eq!(METHODS, ["Authorize", "Consume", "Validate"]);
 }
 
 #[test]
@@ -80,6 +126,7 @@ fn callback_debug_redacts_policy_destination_and_grant_material() {
         authorization: "private-one-use-nonce".into(),
         addresses: vec!["198.51.100.99:443".into()],
     };
+    assert!(format!("{target:?}").contains("REDACTED"));
     let consume = BrowserEgressConsumeRequest {
         target,
         authorization: grant.authorization.clone(),

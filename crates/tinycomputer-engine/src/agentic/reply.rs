@@ -1,14 +1,17 @@
 //! The reply envelopes `RunGoal` and `ResolveIntent` return, the metrics
 //! they carry, and the errors Jev and the desktop map to.
 
+#[cfg(feature = "desktop")]
 use tinycomputer_bus::{
-    DeliveryDisposition, DesktopError, DesktopResponse, JevDecision, JevMetrics, JevObservation,
-    JevRunResult, JevStopReason, JevTurn,
+    DeliveryDisposition, JevDecision, JevObservation, JevRunResult, JevStopReason, JevTurn,
 };
+use tinycomputer_bus::{DesktopError, DesktopResponse, JevMetrics};
 use tinyinference_decisions::{Error as JevError, EvaluationResult};
 
+#[cfg(feature = "desktop")]
 use super::verify::satisfied;
 
+#[cfg(feature = "desktop")]
 pub(super) fn action_failed_response(
     mut turns: Vec<JevTurn>,
     decision: JevDecision,
@@ -27,6 +30,7 @@ pub(super) fn action_failed_response(
     run_response(stop, turns, Some(decision), metrics)
 }
 
+#[cfg(feature = "desktop")]
 pub(super) fn failed_turn(turns: &[JevTurn], decision: &JevDecision) -> JevTurn {
     JevTurn {
         step: u32::try_from(turns.len())
@@ -40,6 +44,7 @@ pub(super) fn failed_turn(turns: &[JevTurn], decision: &JevDecision) -> JevTurn 
     }
 }
 
+#[cfg(feature = "desktop")]
 pub(super) fn run_response(
     stop: JevStopReason,
     turns: Vec<JevTurn>,
@@ -49,6 +54,7 @@ pub(super) fn run_response(
     run_response_with_id(stop, turns, pending, metrics, None)
 }
 
+#[cfg(feature = "desktop")]
 pub(super) fn run_response_observed(
     stop: JevStopReason,
     turns: Vec<JevTurn>,
@@ -70,6 +76,7 @@ pub(super) fn run_response_observed(
     )
 }
 
+#[cfg(feature = "desktop")]
 pub(super) fn run_response_with_id(
     stop: JevStopReason,
     turns: Vec<JevTurn>,
@@ -133,6 +140,7 @@ pub(super) fn provider_error(
     ))
 }
 
+#[cfg(feature = "desktop")]
 pub(super) fn invalid_response(message: &str) -> Box<DesktopResponse> {
     Box::new(DesktopResponse::err(
         "jev-evaluate",

@@ -122,10 +122,7 @@ impl BrowserSurface {
             serde_json::to_string(&name).ok()?
         );
         let same_card = self
-            .block(
-                self.browser
-                    .command(&id, json!({"action": "evaluate", "script": script})),
-            )
+            .block(self.browser.observe_target_check(&id, script))
             .ok()?;
         if same_card.get("result") != Some(&Value::Bool(true)) {
             return None;

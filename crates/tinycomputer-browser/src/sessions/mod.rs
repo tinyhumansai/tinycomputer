@@ -6,18 +6,23 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::RwLock;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
+use tinycomputer_bus::browser::ElementRef;
 use tinycomputer_bus::browser::{DownloadInfo, PageState, SessionId, SessionInfo, SessionOptions};
 
+use crate::action_gate::{ActionContext, ActionGate, default_gate};
+use crate::action_gate::{ActionRequest, ActionVerdict};
 use crate::convert;
 use crate::engine::{Engine, Launcher};
 use crate::error::{Error, Result};
 use crate::origins::Origins;
 use crate::outputs::OutputStore;
 use crate::reply;
+use crate::{ActionObservation, ActionObserver};
 
 mod artifacts;
 mod deep;
@@ -47,7 +52,6 @@ fn navigating(error: &Error) -> bool {
 }
 
 /// Browser automation over agent-browser, one engine per session.
-#[derive(Debug)]
 pub struct Browser {
     launcher: Arc<dyn Launcher>,
     sessions: Mutex<HashMap<SessionId, Arc<tokio::sync::Mutex<Session>>>>,
@@ -58,6 +62,21 @@ pub struct Browser {
     /// the moment the limit is checked, so two concurrent opens cannot both
     /// see room for the last slot.
     opening: AtomicUsize,
+    action_gate: Arc<dyn ActionGate>,
+    action_observer: Arc<RwLock<Option<Arc<dyn ActionObserver>>>>,
+}
+
+impl std::fmt::Debug for Browser {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Browser")
+            .field("scratch", &self.scratch)
+            .field(
+                "session_count",
+                &self.sessions.lock().map(|sessions| sessions.len()).ok(),
+            )
+            .finish_non_exhaustive()
+    }
 }
 
 /// One reserved launch slot, given back when the launch ends — inserted,
@@ -81,6 +100,10 @@ struct Session {
     deep: crate::deep::Minted,
     downloads: Vec<DownloadInfo>,
     dir: PathBuf,
+    action_context: ActionContext,
+    refs: Vec<ElementRef>,
+    closing: bool,
+    closed: bool,
 }
 
 impl std::fmt::Debug for Session {
@@ -95,7 +118,27 @@ impl std::fmt::Debug for Session {
 
 impl Session {
     async fn run(&mut self, command: Value) -> Result<Value> {
+        if self.closing || self.closed {
+            return Err(Error::NoSuchSession {
+                id: self.info.id.to_string(),
+            });
+        }
         reply::data(&self.engine.execute(command).await)
+    }
+
+    async fn close(&mut self) -> Result<()> {
+        self.closing = true;
+        reply::data(&self.engine.execute(json!({"action": "close"})).await).map(|_| ())
+    }
+
+    /// The current address for gate context, or `None` while the page is
+    /// briefly between documents. Never substitute a cached, potentially
+    /// stale address for the location of the page about to be acted on.
+    async fn action_url(&mut self) -> Option<String> {
+        match self.run(json!({"action": "url"})).await {
+            Ok(data) => Some(reply::text(&data, "url")),
+            Err(_) => None,
+        }
     }
 
     async fn page(&mut self) -> Result<PageState> {
@@ -232,6 +275,37 @@ impl Browser {
             scratch,
             counter: AtomicU64::new(0),
             opening: AtomicUsize::new(0),
+            action_gate: default_gate(),
+            action_observer: Arc::default(),
+        }
+    }
+
+    /// Sets the trusted host policy consulted before browser actions.
+    #[must_use]
+    pub fn with_action_gate(mut self, gate: Arc<dyn ActionGate>) -> Self {
+        self.action_gate = gate;
+        self
+    }
+
+    /// Installs a trusted host observer for successful browser actions.
+    pub fn set_action_observer(&self, observer: Option<Arc<dyn ActionObserver>>) {
+        if let Ok(mut current) = self.action_observer.write() {
+            *current = observer;
+        }
+    }
+
+    pub(crate) fn observe_action(&self, observation: ActionObservation) {
+        if let Ok(observer) = self.action_observer.read()
+            && let Some(observer) = observer.as_ref()
+        {
+            observer.observed(observation);
+        }
+    }
+
+    pub(crate) fn check_action(&self, request: &ActionRequest) -> Result<()> {
+        match self.action_gate.check(request) {
+            ActionVerdict::Allow => Ok(()),
+            ActionVerdict::Refuse { reason } => Err(Error::ActionRefused { reason }),
         }
     }
 
@@ -245,6 +319,20 @@ impl Browser {
     /// saying what to set when a browser to launch is not found or will not
     /// start, and whatever the engine reports when one cannot be reached.
     pub async fn open_session(&self, options: SessionOptions) -> Result<SessionInfo> {
+        self.open_session_with_context(options, ActionContext::default())
+            .await
+    }
+
+    /// Opens a session with host-supplied task context for its action gate.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Browser::open_session`].
+    pub async fn open_session_with_context(
+        &self,
+        options: SessionOptions,
+        action_context: ActionContext,
+    ) -> Result<SessionInfo> {
         // Checked and reserved under the table's lock, so the check and the
         // claim are one step for every concurrent caller.
         let reservation = {
@@ -258,6 +346,8 @@ impl Browser {
             Reservation(&self.opening)
         };
         let id = SessionId::new(format!("s-{}", self.next()));
+        let mut action_context = action_context;
+        action_context.session_id = Some(id.to_string());
         let mut session = Session {
             engine: self.launcher.open(id.as_str()),
             info: SessionInfo {
@@ -275,6 +365,10 @@ impl Browser {
             deep: crate::deep::Minted::default(),
             downloads: Vec::new(),
             dir: self.scratch.join(id.as_str()),
+            action_context,
+            refs: Vec::new(),
+            closing: false,
+            closed: false,
         };
         // A browser this module launches says what to set when it cannot
         // start; one attached to keeps the engine's own words.
@@ -323,20 +417,53 @@ impl Browser {
         Ok(info)
     }
 
+    /// Updates the host action-gate context for an existing browser session.
+    /// A retained payment checkout can therefore adopt its verified payment
+    /// mode without opening or claiming another browser session.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the session has gone away, is closing, or its
+    /// state could not be read safely.
+    pub async fn update_action_context(
+        &self,
+        id: &SessionId,
+        action_context: ActionContext,
+    ) -> Result<()> {
+        let session = self.session(id)?;
+        let mut session = session.lock().await;
+        session.check(false).await?;
+        let mut action_context = action_context;
+        action_context.session_id = Some(id.to_string());
+        session.action_context = action_context;
+        Ok(())
+    }
+
     /// Closes a session and everything it owns. Closing one that is already
     /// gone succeeds.
     ///
     /// # Errors
     ///
-    /// Only when the session table itself is unusable.
+    /// When the session table cannot be read or the browser does not confirm
+    /// that it closed. A failed close stays in the table so a later caller
+    /// can retry and no profile owner can mistake the attempt for completion.
     pub async fn close_session(&self, id: &SessionId) -> Result<()> {
-        let Some(session) = self.lock_sessions()?.remove(id) else {
+        let session = self.lock_sessions()?.get(id).cloned();
+        let Some(session) = session else {
             return Ok(());
         };
         let mut session = session.lock().await;
-        // A browser that is already gone has nothing left to close.
-        let _closed = session.run(json!({"action": "close"})).await;
+        if session.closed {
+            return Ok(());
+        }
+        // A browser that is already gone has nothing left to close. A failure
+        // leaves `closing` set so normal operations stay refused while a later
+        // explicit close may retry.
+        session.close().await?;
         let _removed = std::fs::remove_dir_all(&session.dir);
+        session.closed = true;
+        drop(session);
+        self.lock_sessions()?.remove(id);
         Ok(())
     }
 

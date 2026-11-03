@@ -30,6 +30,53 @@ fn a_successful_result_becomes_a_successful_envelope() {
 }
 
 #[test]
+fn surface_names_in_success_data_use_the_contract_wire_spelling() {
+    let envelope = reply::envelope(
+        "list-surfaces",
+        Ok(json!({
+            "surfaces": [{
+                "type": "system-tray",
+                "unclassified": ["notification-center"]
+            }]
+        })),
+    );
+
+    assert_eq!(
+        envelope.data,
+        Some(json!({
+            "surfaces": [{
+                "type": "system_tray",
+                "unclassified": ["notification_center"]
+            }]
+        }))
+    );
+}
+
+#[test]
+fn supported_surface_names_in_error_details_use_the_contract_wire_spelling() {
+    let error = AppError::Adapter(
+        AdapterError::new(ErrorCode::PlatformNotSupported, "surface not supported").with_details(
+            json!({
+                "requested_surface": "quick-settings",
+                "supported_surfaces": ["system-tray", "notification-center"]
+            }),
+        ),
+    );
+
+    let payload = reply::envelope("snapshot", Err(error))
+        .error
+        .expect("a failed envelope carries an error");
+
+    assert_eq!(
+        payload.details,
+        Some(json!({
+            "requested_surface": "quick_settings",
+            "supported_surfaces": ["system_tray", "notification_center"]
+        }))
+    );
+}
+
+#[test]
 fn an_adapter_error_keeps_its_structured_detail_through_the_envelope() {
     let error = AppError::Adapter(
         AdapterError::new(ErrorCode::StaleRef, "Ref @s1:e2 is no longer valid")

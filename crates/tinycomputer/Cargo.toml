@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Native desktop automation — accessibility-tree observation and interaction — as an installable TinyBus module."
+build = "build.rs"
 documentation = "https://docs.rs/tinycomputer"
 readme = "../../README.md"
 keywords = ["tinybus", "module", "accessibility", "automation", "desktop"]
@@ -39,6 +40,7 @@ tinycomputer-engine = { workspace = true, features = ["planner"] }
 # The browser surface a task's workspace drives, with agent-browser linked
 # in-process.
 tinycomputer-browser = { workspace = true, features = ["agent-browser"] }
+url = { workspace = true }
 tinybus = { workspace = true }
 tinybus-module = { workspace = true }
 # Command replies are `serde_json::Value` the whole way through.

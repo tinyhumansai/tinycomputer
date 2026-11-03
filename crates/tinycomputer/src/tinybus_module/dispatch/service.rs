@@ -16,10 +16,11 @@ use tinycomputer_engine as agentic;
 
 use super::DesktopService;
 use crate::tinybus_module::browser_egress::BusAuthorizer;
-use crate::tinybus_module::config::{BrowserDefaults, cursor_config};
+use crate::tinybus_module::config::{BrowserDefaults, cursor_config, trace_sink_destination};
 use crate::tinybus_module::consequence_gate::{ConsequenceLink, ConsequencePort};
 use crate::tinybus_module::runner::WorkspaceRunner;
 use crate::tinybus_module::site_memory::{SiteLink, SiteMemoryPort, refused_flow};
+use crate::tinybus_module::trace_sink::TraceLink;
 use crate::{Desktop, Result};
 
 /// Decodes the host-owned fields from the public config while leaving the
@@ -106,8 +107,9 @@ impl DesktopService {
         Self::with_browser(config, Arc::new(Browser::new(Arc::new(AgentBrowser))))
     }
 
-    /// Builds the service with the host callback connection used by private
-    /// browser egress policy.
+    /// Builds the service with authenticated host callbacks available on the
+    /// module connection. A configured egress scope selects the enforced
+    /// browser launcher, and a configured trace sink receives desktop traces.
     pub(crate) fn from_config_with_connection(
         config: &serde_json::Value,
         connection: tinybus::Connection,
@@ -116,12 +118,19 @@ impl DesktopService {
             .map_err(|error| TinyBusError::failed(error.to_string()))?;
         let browser = if let Some(egress) = &egress {
             Arc::new(Browser::new(Arc::new(EnforcedAgentBrowser::new(Arc::new(
-                BusAuthorizer::new(connection, egress.policy_id.clone(), egress.generation),
+                BusAuthorizer::new(connection.clone(), egress.policy_id.clone(), egress.generation),
             )))))
         } else {
             Arc::new(Browser::new(Arc::new(AgentBrowser)))
         };
-        Self::with_browser_and_defaults(config, browser, egress)
+        let trace_link = if let Some(destination) = trace_sink_destination(config)
+            .map_err(|error| TinyBusError::failed(error.to_string()))?
+        {
+            Some(TraceLink::new(connection, destination)?)
+        } else {
+            None
+        };
+        Self::with_browser_and_defaults(config, browser, egress, trace_link)
             .map_err(|error| TinyBusError::failed(error.to_string()))
     }
 
@@ -140,18 +149,34 @@ impl DesktopService {
                 expected: "a module set up with its authenticated host callback connection",
             });
         }
-        Self::with_browser_and_defaults(config, browser, egress)
+        if trace_sink_destination(config)?.is_some() {
+            return Err(crate::Error::ConfigFieldType {
+                field: "trace_sink",
+                expected: "a module set up with its host callback connection",
+            });
+        }
+        if super::super::config::consequence_host_destination(config)?.is_some() {
+            return Err(crate::Error::ConfigFieldType {
+                field: "consequence_host",
+                expected: "a module set up with its confidential host callback connection",
+            });
+        }
+        Self::with_browser_and_defaults(config, browser, egress, None)
     }
 
     fn with_browser_and_defaults(
         config: &serde_json::Value,
         browser: Arc<Browser>,
         egress: Option<crate::tinybus_module::config::BrowserEgressConfig>,
+        trace_link: Option<Arc<TraceLink>>,
     ) -> Result<Self> {
         let cursor = Arc::new(cursor_config(config)?);
         let computer = computer_config(config)?;
-        let desktop =
+        let mut desktop =
             Desktop::from_config(&desktop_config(config, &computer))?.with_cursor(cursor.clone());
+        if let Some(link) = &trace_link {
+            desktop = desktop.with_trace_sink(link.clone());
+        }
         let jev = computer
             .jev
             .as_ref()
@@ -200,6 +225,7 @@ impl DesktopService {
             accessibility: Arc::new(super::accessibility::Access::default()),
             site_link: None,
             consequence_link: None,
+            trace_link,
         })
     }
 

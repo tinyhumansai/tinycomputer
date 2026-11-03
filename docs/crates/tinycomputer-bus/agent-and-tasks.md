@@ -108,7 +108,8 @@ for the fuller picture of what does and does not get automated here.
 `TaskBudget` mirrors the levers `RunFlowRequest` exposes (see
 [Writing flows](flows.md)) but every field is `Option`, so an unset one takes
 the module's own default rather than the crate baking one in twice:
-`max_actions`, `max_model_calls`, `votes`, `strategy`, `deliberation`,
+`max_actions`, `max_model_calls`, `votes`, `max_do_turns` (turns each `do`
+step may spend, 8 when unset, at most 32), `strategy`, `deliberation`,
 `max_elapsed_ms` (excludes time spent waiting on the caller), and
 `max_rescues`, how many times a failed step may be handed to a reasoning
 model for guidance before the task gives up on it. Absent means the module's

@@ -32,7 +32,7 @@ Change a constant and its row together.
 | `CAP` | 20 | `ask/mod.rs` | most options in one Choice |
 | `HEDGED` | 0.10 | `ask/answers.rs` | distance from an even chance within which a condition's calibrated yes/no says nothing either way, and defers to a crisp coverage |
 | `CRISP_TOP` | 0.85 | `ask/answers.rs` | probability on a condition's top coverage level at which it stands alone for a hedged yes/no |
-| `DO_TURNS` | 8 | `steps/mod.rs` | turns a `do` step may spend |
+| `DO_TURNS` / `MAX_DO_TURNS` | 8 / 32 | `steps/mod.rs`, `mod.rs` | turns a `do` step may spend when `max_do_turns` is unset, and the most a run may set |
 | `REFLECT_FLOOR` | 0.50 | `reflect.rs` | belief that a pressed `choose` left its choice, below which it is repaired, and failed if the repair does not take |
 | `REPAIR_TURNS` | 4 | `reflect.rs` | turns one reflection repair may spend |
 | `MAX_ACTIONS` / `MAX_CALLS` | 120 / 10000 | `mod.rs` | per-run caps on actions and Jev calls |

@@ -42,14 +42,15 @@ use tinycomputer_bus::{
 use std::sync::Arc;
 
 use tinycomputer_bus::agent::{
-    AgentResponse, AwaitTaskRequest, Capabilities, ContinueTaskRequest, PlanTaskRequest,
-    StartTaskRequest, SurfaceAvailability, SurfaceKind, TaskPlan, TaskRef, TaskReport,
-    TaskReportRequest, TaskView,
+    AgentError, AgentResponse, AwaitTaskRequest, Capabilities, ContinueTaskRequest,
+    PlanTaskRequest, StartTaskRequest, SurfaceAvailability, SurfaceKind, TaskPlan, TaskRef,
+    TaskReport, TaskReportRequest, TaskView,
 };
 
 use super::consequence_gate::ConsequenceLink;
 use super::runner::jev_not_configured;
 use super::site_memory::SiteLink;
+use super::trace_sink::TraceLink;
 use crate::Desktop;
 use tinycomputer_browser::{
     Action, Browser, DownloadWaitRequest, EvaluateRequest, NavigateRequest, OutputRequest,
@@ -81,6 +82,8 @@ pub(crate) struct DesktopService {
     site_link: Option<Arc<SiteLink>>,
     /// The host's consequence review, when the module was set up on a bus.
     consequence_link: Option<Arc<ConsequenceLink>>,
+    /// The host's trace and report persistence callback, when enabled.
+    trace_link: Option<Arc<TraceLink>>,
 }
 
 #[tinybus::interface(name = "ai.tinyhumans.tinycomputer.Desktop")]
@@ -200,7 +203,21 @@ impl DesktopService {
         &self,
         request: TaskReportRequest,
     ) -> TinyBusResult<AgentResponse<TaskReport>> {
-        self.on_tasks(move |tasks| tasks.report_for(&request)).await
+        let reply = self
+            .on_tasks(move |tasks| tasks.report_for(&request))
+            .await?;
+        if let (Some(link), Some(report)) = (&self.trace_link, &reply.data)
+            && link
+                .write_report(tinycomputer_bus::trace_sink::TaskReportRecord {
+                    task_id: report.view.id.to_string(),
+                    report: report.clone(),
+                })
+                .await
+                .is_err()
+        {
+            return Ok(report_sink_failure());
+        }
+        Ok(reply)
     }
 
     /// The tasks this module holds, newest first.
@@ -594,16 +611,22 @@ impl DesktopService {
         .await
     }
 
-    /// Terminal joined listener cleanup before unloading the module.
+    /// Joins native listeners and the trace sink worker before module unload.
     async fn globe_shutdown(&self) -> TinyBusResult<DesktopResponse> {
         // Close admission before scheduling the blocking cleanup barrier.
         self.accessibility.close_admission();
-        accessibility::run(
+        let accessibility_reply = accessibility::run(
             Arc::clone(&self.accessibility),
             "globe-shutdown",
             accessibility::Access::shutdown,
         )
-        .await
+        .await;
+        if let Some(link) = self.trace_link.clone() {
+            tokio::task::spawn_blocking(move || link.shutdown())
+                .await
+                .map_err(|_| tinybus::Error::failed("trace sink shutdown task failed"))??;
+        }
+        accessibility_reply
     }
 
     /// Native globe stop through module-owned resources.
@@ -802,3 +825,16 @@ impl DesktopService {
         ))
     }
 }
+
+fn report_sink_failure<T>() -> AgentResponse<T> {
+    AgentResponse::err(AgentError::new(
+        "TRACE_SINK_FAILED",
+        "task report could not be persisted by the configured host",
+        "retry TaskReport to ask the host to persist it again",
+        true,
+    ))
+}
+
+#[cfg(test)]
+#[path = "dispatch_tests.rs"]
+mod tests;

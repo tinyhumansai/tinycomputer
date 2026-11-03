@@ -40,7 +40,9 @@ impl Desktop {
                 wait::WaitArgs {
                     mode: wait::WaitModeArgs {
                         ms: request.ms,
-                        element: request.element,
+                        element: request.element.map(|ref_id| {
+                            super::convert::qualified_ref(ref_id, request.snapshot_id.as_deref())
+                        }),
                         window: request.window,
                         text: request.text,
                         surface: surface_wait(request.surface.as_deref())?,
@@ -48,7 +50,6 @@ impl Desktop {
                         window_id: request.window_id,
                     },
                     predicate: wait::WaitPredicateArgs {
-                        snapshot_id: request.snapshot_id,
                         predicate: request.predicate,
                         value: request.value,
                         action: request.action,

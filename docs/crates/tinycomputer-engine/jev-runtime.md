@@ -18,8 +18,9 @@ sees every exchange, with nothing able to slip past it.
 
 ## Configuring a runtime
 
-A `JevRuntime` is built once, from the module's private configuration, with
-`JevRuntime::configure`:
+A `JevRuntime` is built once from a host's `JevConfig` with
+`JevRuntime::configure`. The TinyBus module receives this configuration from
+its loader; an embedding host can construct the same value directly:
 
 ```rust
 let runtime = JevRuntime::configure(&JevConfig {

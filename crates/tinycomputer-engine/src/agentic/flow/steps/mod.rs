@@ -44,8 +44,9 @@ use tinycomputer_bus::FlowAction;
 
 use super::{Ended, FlowRun, Halt, StepLog, backend::AgentBackend};
 
-/// Turns a `do` step may spend.
-const DO_TURNS: u32 = 8;
+/// Turns a `do` step may spend when the run does not set
+/// `RunFlowRequest::max_do_turns`.
+pub(super) const DO_TURNS: u32 = 8;
 /// Turns spent opening the thing a `choose` step picks from.
 pub(super) const REVEAL_TURNS: u32 = 3;
 /// Times `open` checks for a readable window, waiting between checks.
@@ -99,7 +100,7 @@ pub(super) async fn run<B: AgentBackend + Sync>(
         // then be typed as the caller's card number.
         FlowAction::Do(intent) => match typing::typing(intent) {
             Some(slot) => run.enter(log, &[slot]).await,
-            None => run.accomplish(log, text, DO_TURNS).await,
+            None => run.accomplish(log, text, run.do_turns).await,
         },
         FlowAction::Enter(slots) => run.enter(log, &slots.0).await,
         FlowAction::Choose(choose) => run.choose(log, choose).await,

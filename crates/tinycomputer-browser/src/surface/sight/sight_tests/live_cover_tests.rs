@@ -267,3 +267,86 @@ async fn live_a_target_is_centred_at_once_on_a_page_that_scrolls_smoothly() {
     browser.close_session(&info.id).await.unwrap();
     assert_eq!(centred["result"], json!([true, true]));
 }
+
+#[cfg(feature = "agent-browser")]
+#[tokio::test]
+async fn live_private_cover_hides_editable_hits_and_overlay_aggregates() {
+    const UNKNOWN: &str = "profile-autofill-unknown-7Qz9";
+    let html = format!(
+        r#"<style>
+          html, body {{ margin: 0; }}
+          #veil {{ position: fixed; inset: 0; z-index: 10; background: rgba(0,0,0,.3); }}
+          #card {{ margin: 100px; padding: 24px; background: white; }}
+          #editor {{ width: 280px; height: 80px; }}
+          #aggregate {{ position: absolute; left: 400px; top: 250px; width: 320px; height: 120px; }}
+          #aggregate-editor {{ position: absolute; right: 8px; bottom: 8px; width: 120px; height: 40px; }}
+        </style>
+        <div id="veil">
+          <div id="card">
+            <p>Overlay privacy notice</p>
+            <div id="editor" role="textbox" contenteditable="true">{UNKNOWN}
+              <button aria-label="{UNKNOWN} action">Send</button>
+            </div>
+          </div>
+          <button id="aggregate">
+            Overlay button notice
+            <div id="aggregate-editor" role="textbox" contenteditable="true">{UNKNOWN}</div>
+          </button>
+        </div>"#
+    );
+    let Some((browser, info)) = live_page(&html).await else {
+        return;
+    };
+    let bounds = browser
+        .command(
+            &info.id,
+            json!({"action": "boundingbox", "selector": "#editor"}),
+        )
+        .await
+        .unwrap();
+    let x = bounds["x"].as_f64().unwrap() + bounds["width"].as_f64().unwrap() / 2.0;
+    let y = bounds["y"].as_f64().unwrap() + bounds["height"].as_f64().unwrap() / 2.0;
+    let button_bounds = browser
+        .command(
+            &info.id,
+            json!({"action": "boundingbox", "selector": "#aggregate"}),
+        )
+        .await
+        .unwrap();
+    let button_x = button_bounds["x"].as_f64().unwrap() + 8.0;
+    let button_y = button_bounds["y"].as_f64().unwrap() + 8.0;
+    let read = |x: f64, y: f64, private: bool| {
+        format!("{COVER_JS}({x}, {y}, null, false, {SPOT_GRID}, {private})")
+    };
+    let mut results = Vec::new();
+    for (x, y, private) in [
+        (x, y, true),
+        (x, y, false),
+        (button_x, button_y, true),
+        (button_x, button_y, false),
+        (10.0, 10.0, true),
+        (10.0, 10.0, false),
+    ] {
+        results.push(
+            browser
+                .command(
+                    &info.id,
+                    json!({"action": "evaluate", "script": read(x, y, private)}),
+                )
+                .await
+                .unwrap()["result"]
+                .clone(),
+        );
+    }
+    browser.close_session(&info.id).await.unwrap();
+
+    assert!(!results[0].to_string().contains(UNKNOWN));
+    assert!(results[1].to_string().contains(UNKNOWN));
+    assert!(!results[2].to_string().contains(UNKNOWN));
+    assert!(results[2].to_string().contains("Overlay button notice"));
+    assert!(results[3].to_string().contains(UNKNOWN));
+    assert!(!results[4].to_string().contains(UNKNOWN));
+    assert!(results[4].to_string().contains("Overlay privacy notice"));
+    assert!(results[4].to_string().contains("Overlay button notice"));
+    assert!(results[5].to_string().contains(UNKNOWN));
+}

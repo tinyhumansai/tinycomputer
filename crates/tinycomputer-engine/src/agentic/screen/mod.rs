@@ -3,8 +3,12 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::hash::{Hash, Hasher};
-use tinycomputer_bus::{DesktopResponse, SnapshotRequest, Surface};
+#[cfg(feature = "desktop")]
+use tinycomputer_bus::Surface;
+#[cfg(feature = "desktop")]
+use tinycomputer_bus::{DesktopResponse, SnapshotRequest};
 
+#[cfg(feature = "desktop")]
 use crate::Desktop;
 
 const MAX_TREE_DEPTH: usize = 64;
@@ -70,6 +74,7 @@ pub(super) struct Screen {
     pub(super) observed: Vec<Candidate>,
 }
 
+#[cfg(feature = "desktop")]
 pub(super) fn observe(
     desktop: &Desktop,
     app: &str,
@@ -90,6 +95,7 @@ pub(super) fn observe(
     parse_reply(desktop, app, window_id, root, reply)
 }
 
+#[cfg(feature = "desktop")]
 pub(super) fn snapshot_request(
     app: &str,
     window_id: Option<&str>,
@@ -106,6 +112,7 @@ pub(super) fn snapshot_request(
     }
 }
 
+#[cfg(feature = "desktop")]
 pub(super) fn parse_reply(
     desktop: &Desktop,
     app: &str,

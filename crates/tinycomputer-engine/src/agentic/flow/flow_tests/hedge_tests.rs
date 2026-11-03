@@ -69,9 +69,11 @@ fn paced_as(
             endpoint_url: None,
             fast: false,
         },
+        #[cfg(feature = "desktop")]
         pending: Arc::default(),
         journal: crate::agentic::journal::Journal::default(),
         copies: Arc::default(),
+        usage: None,
     };
     (runtime, paced)
 }

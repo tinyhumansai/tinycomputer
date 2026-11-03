@@ -8,13 +8,13 @@ use tinycomputer_bus::agent::{
     AgentError, AgentResponse, ContinueTaskRequest, TaskStatus, TaskView,
 };
 use tinycomputer_bus::{Flow, FlowAction, FlowStep};
-use tinycomputer_core::Facts;
+use tinycomputer_core::{Facts, SecretFactHandle};
 
 use super::Tasks;
 use super::errors::poisoned;
 use super::interpret::Resume;
 use super::names::{fact_names, is_undefined, known_names};
-use super::publish::{needs_input, publish};
+use super::publish::{needs_input, publish, stopped_summary};
 use super::store::{Cell, Run};
 
 impl Tasks {
@@ -27,10 +27,43 @@ impl Tasks {
             return poisoned();
         };
         // A supplied value is secret when its name says so, like any other.
-        state.facts = state.facts.merged(&Facts::new(request.inputs));
-        let known = known_names(&state.flow, &state.facts);
+        // Handles stay with the host; only their opaque references enter task
+        // state and the model-facing request.
+        let supplied = match Facts::with_handles(
+            request.inputs,
+            request.fact_handles.into_iter().map(|(name, handle)| {
+                (
+                    name,
+                    SecretFactHandle {
+                        handle: handle.handle,
+                        mask: handle.mask,
+                        kind: handle.kind,
+                    },
+                )
+            }),
+            std::iter::empty::<String>(),
+        ) {
+            Ok(facts) => facts,
+            Err(error) => {
+                return AgentResponse::err(AgentError::new(
+                    "INVALID_SECRET_FACT",
+                    error.to_string(),
+                    "provide each secret input as a non-empty host handle with a unique name",
+                    true,
+                ));
+            }
+        };
+        for name in supplied.names() {
+            state.omitted_secrets.remove(name);
+        }
+        state.facts = state.facts.merged(&supplied);
+        let mut input_flow = state.flow.clone();
+        if let Some(Resume::Retry { steps, .. }) = &state.resume {
+            input_flow.steps.extend(steps.iter().cloned());
+        }
+        let known = known_names(&input_flow, &state.facts);
         let facts = fact_names(&state.facts);
-        let missing = crate::agentic::missing_inputs(&state.flow, &known, &facts);
+        let missing = crate::agentic::missing_inputs(&input_flow, &known, &facts);
         if !missing.is_empty() {
             drop(state);
             publish(
@@ -38,7 +71,7 @@ impl Tasks {
                 needs_input(&missing),
                 "The task still needs values before it can start.",
             );
-            return AgentResponse::ok(cell.view.borrow().clone());
+            return AgentResponse::ok(cell.current_view());
         }
         // A newly supplied value can turn a reference that only looked
         // undefined at `StartTask` into a fact used somewhere Jev must never
@@ -59,6 +92,12 @@ impl Tasks {
                 true,
             ));
         }
+        if let Some(status) = state.return_after_input.take() {
+            let summary = stopped_summary(&status);
+            drop(state);
+            publish(cell, status, &summary);
+            return AgentResponse::ok(cell.current_view());
+        }
         let run = Run {
             flow: state.flow.clone(),
             allow_destructive: state.constraints.allow_destructive,
@@ -66,7 +105,7 @@ impl Tasks {
         };
         drop(state);
         self.spawn(cell, vec![run]);
-        AgentResponse::ok(cell.view.borrow().clone())
+        AgentResponse::ok(cell.current_view())
     }
 
     pub(super) fn decide(
@@ -119,7 +158,7 @@ impl Tasks {
             );
             self.runner.release(&cell.view.borrow().id);
         }
-        AgentResponse::ok(cell.view.borrow().clone())
+        AgentResponse::ok(cell.current_view())
     }
 
     /// Runs the step a person has just got the task past, and the rest.
@@ -141,6 +180,6 @@ impl Tasks {
                 }],
             );
         }
-        AgentResponse::ok(cell.view.borrow().clone())
+        AgentResponse::ok(cell.current_view())
     }
 }

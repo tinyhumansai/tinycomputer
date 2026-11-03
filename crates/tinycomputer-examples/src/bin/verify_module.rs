@@ -7,18 +7,19 @@
 
 use std::io;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tinybus::Connection;
 use tinybus::broker::Broker;
 use tinybus::module::{
-    AccessFuture, FailureReport, FailureReporter, FailureSink, ModuleAccess, ModuleHost,
-    ProxyFailure, ReconfigurableModule, ReconfigureFailure, ReleaseRecord,
+    AccessFuture, FailureReport, FailureReporter, FailureSink, HostCallbackEndpoint, ModuleAccess,
+    ModuleHost, ProxyFailure, ReconfigurableModule, ReconfigureFailure, ReleaseRecord,
 };
 use tinybus::transport::memory::MemoryBus;
 use tinycomputer_bus::config::ComputerConfig;
-use tinycomputer_bus::{DesktopResponse, METHODS, names};
+use tinycomputer_bus::{DesktopResponse, METHODS, names, trace_sink};
 use tinycomputer_client::ComputerClient;
 
 static TINYCOMPUTER_RELEASE: ReleaseRecord = ReleaseRecord {
@@ -105,6 +106,50 @@ impl ModuleAccess for LoadedModuleAccess {
     }
 }
 
+#[derive(Clone, Default)]
+struct TraceSinkCapture {
+    events: Arc<Mutex<Vec<serde_json::Value>>>,
+    reports: Arc<Mutex<Vec<trace_sink::TaskReportRecord>>>,
+    fail_reports: Arc<AtomicBool>,
+}
+
+#[tinybus::interface(name = "ai.tinyhumans.tinycomputer.TraceSinkHost")]
+impl TraceSinkCapture {
+    async fn append(&self, event: trace_sink::TraceEvent) -> tinybus::Result<trace_sink::SinkAck> {
+        tokio::task::yield_now().await;
+        self.events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(event.record);
+        Ok(trace_sink::SinkAck {})
+    }
+
+    async fn store_artifact(
+        &self,
+        _artifact: trace_sink::TraceArtifact,
+    ) -> tinybus::Result<trace_sink::TraceArtifactRef> {
+        tokio::task::yield_now().await;
+        Err(tinybus::Error::failed(
+            "verification fixture does not persist trace artifacts",
+        ))
+    }
+
+    async fn write_report(
+        &self,
+        report: trace_sink::TaskReportRecord,
+    ) -> tinybus::Result<trace_sink::SinkAck> {
+        tokio::task::yield_now().await;
+        if self.fail_reports.load(Ordering::SeqCst) {
+            return Err(tinybus::Error::failed("verification report sink failure"));
+        }
+        self.reports
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(report);
+        Ok(trace_sink::SinkAck {})
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let module = module_argument()?;
@@ -112,8 +157,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let broker = Broker::new();
     let broker_task = broker.spawn(bus.clone());
     let module_host = Arc::new(ModuleHost::new(broker));
+    let callback = module_host
+        .prepare_host_callbacks(vec![HostCallbackEndpoint {
+            path: trace_sink::OBJECT_PATH.parse()?,
+            interface: trace_sink::INTERFACE.parse()?,
+            members: trace_sink::METHODS
+                .iter()
+                .map(|member| (*member).parse())
+                .collect::<Result<_, _>>()?,
+        }])
+        .await?;
+    let capture = TraceSinkCapture::default();
+    let trace_path = std::env::temp_dir().join(format!(
+        "tinycomputer-module-trace-{}-{}.jsonl",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos()
+    ));
+    let _trace_path = RemoveTraceFileOnDrop(trace_path.clone());
+    callback
+        .serve_at(trace_sink::OBJECT_PATH.parse()?, capture.clone())
+        .await?;
+    let config = serde_json::json!({
+        "trace_sink": {"destination": callback.unique_name()},
+        "trace_path": trace_path.to_string_lossy(),
+        "trace_strict": true,
+    });
+    let info = module_host
+        .load_file_with_host_callbacks(&module, config, &callback)
+        .await?;
     let client_config = ComputerConfig::default();
-    let info = module_host.load_file_with_config(&module, serde_json::to_value(&client_config)?)?;
 
     if info.name != "tinycomputer" {
         return Err(io::Error::other(format!(
@@ -149,6 +223,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ))
         .into());
     }
+    verify_trace_sink(&capture, &trace_path)?;
+
+    verify_report_sink(&proxy, &capture).await?;
+
     verify_typed_client(&bus, &module_host, &client_config).await?;
 
     let declared: Vec<&str> = info
@@ -207,6 +285,118 @@ async fn verify_typed_client(
     let capabilities = client.describe(config).await?;
     if capabilities.contract_version != tinycomputer_bus::CONTRACT_VERSION {
         return Err(io::Error::other("typed client Describe contract version mismatch").into());
+    }
+    Ok(())
+}
+
+/// Removes a trace path if a regression sends sink-mode events to disk.
+struct RemoveTraceFileOnDrop(PathBuf);
+
+impl Drop for RemoveTraceFileOnDrop {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// Proves the loaded module emits a native desktop trace through its callback.
+fn verify_trace_sink(
+    capture: &TraceSinkCapture,
+    legacy_path: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if legacy_path.exists() {
+        return Err(io::Error::other("trace sink mode wrote the legacy trace file").into());
+    }
+    let events = capture
+        .events
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let names = events
+        .iter()
+        .filter_map(|event| event.get("event").and_then(serde_json::Value::as_str))
+        .collect::<Vec<_>>();
+    for required in ["trace.meta", "command.start", "command.end"] {
+        if !names.contains(&required) {
+            return Err(io::Error::other(format!(
+                "loaded module trace callback did not receive `{required}`"
+            ))
+            .into());
+        }
+    }
+    Ok(())
+}
+
+/// Exercises report delivery through the exact confidential callback binding.
+async fn verify_report_sink(
+    proxy: &tinybus::Proxy,
+    capture: &TraceSinkCapture,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use tinycomputer_bus::agent::{AgentResponse, StartTaskRequest, TaskReportRequest, TaskView};
+
+    let started: AgentResponse<TaskView> = proxy
+        .call_confidential(
+            names::methods::START_TASK,
+            (StartTaskRequest {
+                flow: Some(serde_json::from_value(serde_json::json!({
+                    "app": "verification",
+                    "steps": ["verify report delivery"]
+                }))?),
+                ..StartTaskRequest::default()
+            },),
+        )
+        .await?;
+    if !started.ok {
+        return Err(io::Error::other("module rejected the verification task flow").into());
+    }
+    let task_id = started
+        .data
+        .ok_or_else(|| io::Error::other("module did not start the no-op verification task"))?
+        .id;
+    let report: AgentResponse<tinycomputer_bus::agent::TaskReport> = proxy
+        .call_confidential(
+            names::methods::TASK_REPORT,
+            (TaskReportRequest {
+                id: task_id.clone(),
+                trace: false,
+            },),
+        )
+        .await?;
+    if report.data.is_none() {
+        return Err(io::Error::other("module did not return the verification task report").into());
+    }
+    let report_received = {
+        let captured = capture
+            .reports
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        captured.len() == 1 && captured[0].task_id == task_id.to_string()
+    };
+    if !report_received {
+        return Err(
+            io::Error::other("confidential host callback did not receive the task report").into(),
+        );
+    }
+    capture.fail_reports.store(true, Ordering::SeqCst);
+    let failed = proxy
+        .call_confidential::<AgentResponse<tinycomputer_bus::agent::TaskReport>>(
+            names::methods::TASK_REPORT,
+            (TaskReportRequest {
+                id: task_id,
+                trace: false,
+            },),
+        )
+        .await;
+    let expected_failure = match failed {
+        Ok(response) => {
+            !response.ok
+                && response.data.is_none()
+                && response
+                    .error
+                    .is_some_and(|error| error.code == "TRACE_SINK_FAILED" && error.recoverable)
+        }
+        Err(_) => false,
+    };
+    if !expected_failure {
+        return Err(io::Error::other("task report sink failure was not returned").into());
     }
     Ok(())
 }

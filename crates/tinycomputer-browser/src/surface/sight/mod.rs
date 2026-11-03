@@ -84,6 +84,16 @@ const MAX_CONTEXT_LINES: usize = 60;
 /// ref from an earlier screen.
 #[must_use]
 pub(crate) fn script(root: Option<&str>) -> String {
+    script_with_form_values(root, true)
+}
+
+/// The Sight observation script for a host that keeps form values private.
+#[must_use]
+pub(crate) fn script_without_form_values(root: Option<&str>) -> String {
+    script_with_form_values(root, false)
+}
+
+fn script_with_form_values(root: Option<&str>, include_form_values: bool) -> String {
     let root = root.map_or(Value::Null, |reference| Value::String(selector(reference)));
     let limits = json!({
         "controls": MAX_CONTROLS,
@@ -91,6 +101,7 @@ pub(crate) fn script(root: Option<&str>) -> String {
         "labels": MAX_LABELS,
         "name": MAX_NAME,
         "text": MAX_TEXT,
+        "hideFormValues": !include_form_values,
     });
     format!(
         "({})({root}, {limits})",

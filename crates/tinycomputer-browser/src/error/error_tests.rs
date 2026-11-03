@@ -63,6 +63,25 @@ fn a_lost_connection_tells_the_host_to_open_a_new_session() {
 }
 
 #[test]
+fn a_host_refusal_is_a_non_retryable_policy_denial() {
+    let error = Error::ActionRefused {
+        reason: "host did not allow the action".to_owned(),
+    };
+    let envelope = error.envelope();
+
+    assert_eq!(error.wire_name(), errors::BLOCKED_BY_POLICY);
+    assert_eq!(envelope.code, "POLICY_DENIED");
+    assert_eq!(
+        envelope.disposition.delivery,
+        DeliveryDisposition::NotDelivered
+    );
+    assert_eq!(
+        envelope.message,
+        "action refused by host: host did not allow the action"
+    );
+}
+
+#[test]
 fn stale_ref_tells_the_caller_to_snapshot_again() {
     let error = Error::StaleRef {
         reference: "e12".to_string(),
@@ -109,6 +128,9 @@ fn every_variant() -> Vec<Error> {
         Error::timeout("navigate", 30_000),
         Error::BlockedByPolicy {
             url: "https://evil.test/".to_string(),
+        },
+        Error::ActionRefused {
+            reason: "blocked by the trusted host".to_owned(),
         },
         Error::LeftRefusedPage {
             url: "https://evil.test/".to_string(),
@@ -218,6 +240,7 @@ fn only_failures_decided_before_the_page_claim_nothing_was_delivered() {
                 | Error::NoSuchOutput { .. }
                 | Error::StaleRef { .. }
                 | Error::BlockedByPolicy { .. }
+                | Error::ActionRefused { .. }
         )
     };
     for error in every_variant() {

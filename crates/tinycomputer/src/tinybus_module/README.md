@@ -56,7 +56,19 @@ The host-visible loader fields are decoded as
 `tinycomputer_bus::config::ComputerConfig`: optional `jev`, `planner`,
 `browser`, and `trace_path`. The planner's route types are the same public
 types used by the engine. The module adapter converts `trace_path` into
-`Desktop` settings and applies the typed browser defaults.
+`Desktop` settings and applies the typed browser defaults: `browser` sets how
+every browser launches — `executable`, `user_agent`, `args`, a task's page
+`perception`, how a page `settle`s after an action, and whether to `prelaunch`
+a planned browser task's browser.
+
+Setting `trace_sink` to an object with the unique `destination` supplied by
+`ModuleHost::prepare_host_callbacks` opts into the host's confidential
+`TraceSinkHost` interface for ordered desktop trace events, trace artifacts,
+and requested task reports; selected sink mode never writes local trace files.
+Artifact bytes use base64 and are capped at 8 MiB decoded so the callback stays
+below TinyBus's frame limit. Leaving it absent or `false` retains the existing
+`trace_path` and session behavior. `true` without a callback destination is
+rejected.
 
 Module-only legacy options remain outside this host contract: `session_id`,
 `trace_strict`, and `headed` still configure `Desktop`, while `cursor` sets the
@@ -65,6 +77,14 @@ agent's on-screen cursor (a pace of `off`, `brisk`, `natural`, or `calm`, or
 loader configurations. An unreadable option fails before replacing the served
 object rather than falling back to defaults. TinyBus treats initial and
 replacement module configuration as sensitive host-control traffic.
+
+Setting `consequence_host` to an object with the unique `destination` supplied
+by `ModuleHost::prepare_host_callbacks` enables confidential consequence
+reviews. When `ContinueTask` approves a pending action for host review, the
+module declines it if the configured callback is absent or cannot answer. A
+declined approval, an unanswered pause, or a continuation with no pending
+action does not fail solely because this callback is absent. Without host
+context, the legacy well-known host interface remains available.
 
 ## The manifest
 
@@ -78,7 +98,10 @@ of this module's own source, because reading them back out of the exported
 
 Integration tests use TinyBus's in-memory transport, and
 `crates/tinycomputer-examples/src/bin/verify_module.rs` loads a compiled `cdylib` through
-the real dynamic loader before a release archive is accepted.
+the real dynamic loader before a release archive is accepted. Its trace-sink
+fixture invokes the no-permission `Version` member, checks captured native trace
+records and confirms sink mode leaves the configured legacy trace path absent;
+it also verifies successful and failed confidential task-report writes.
 
 ## Native accessibility lifecycle
 
@@ -89,5 +112,6 @@ in the host. See the [contract](../../../tinycomputer-bus/src/accessibility/READ
 GlobeRead retains a bounded typed batch until acknowledgment. Native overflow or
 legacy destructive polling marks continuity loss, requiring activation reset.
 GlobeShutdown rejects new listener acquisition and awaits native child/pipe
-cleanup before returning. Stop failures retain
-ownership for retry; terminal shutdown must succeed before generic ABI unload.
+cleanup before returning. Stop failures retain ownership for retry; terminal
+shutdown joins native listeners and the trace sink worker before generic ABI
+unload.

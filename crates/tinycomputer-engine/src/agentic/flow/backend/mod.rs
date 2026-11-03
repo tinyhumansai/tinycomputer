@@ -44,5 +44,5 @@ where
         })
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "desktop"))]
 mod backend_tests;

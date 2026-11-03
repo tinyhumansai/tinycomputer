@@ -34,7 +34,9 @@ fn the_crate_re_exports_the_contract_rather_than_redefining_it() {
 #[test]
 fn the_shipped_contract_binds_to_itself() {
     assert!(is_compatible(CONTRACT_VERSION));
-    assert_eq!(CONTRACT_VERSION, (2, 21));
+    assert_eq!(CONTRACT_VERSION, (2, 29));
+    assert!(!is_compatible((2, 28)));
+    assert!(!is_compatible((2, 25)));
 }
 
 #[test]

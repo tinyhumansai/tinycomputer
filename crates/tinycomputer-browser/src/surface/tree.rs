@@ -14,7 +14,19 @@ const MAX_CONTEXT_CHARS: usize = 160;
 
 /// Roles that contain a page's field content rather than its chrome; text
 /// inside them never reaches the shared context.
-const FIELD_ROLES: &[&str] = &["textbox", "searchbox", "combobox", "textarea", "document"];
+const FIELD_ROLES: &[&str] = &[
+    "textbox",
+    "searchbox",
+    "combobox",
+    "textarea",
+    "document",
+    "spinbutton",
+    "checkbox",
+    "radio",
+    "switch",
+    "menuitemcheckbox",
+    "menuitemradio",
+];
 
 /// Roles a value is typed into.
 const TYPED_ROLES: &[&str] = &["textbox", "searchbox", "combobox", "spinbutton", "textarea"];
@@ -143,6 +155,22 @@ fn closing_quote(body: &str) -> Option<usize> {
 /// A whole snapshot as a [`Screen`] of the page titled `title`.
 #[must_use]
 pub(crate) fn screen(tree: &str, title: &str) -> Screen {
+    screen_with_form_values(tree, title, true)
+}
+
+/// Parses a tree while keeping form content out of every candidate and
+/// description that could be shown to a task model.
+#[must_use]
+pub(crate) fn screen_without_form_values(tree: &str, title: &str) -> Screen {
+    screen_with_form_values(tree, title, false)
+}
+
+/// Whether a role can contain user-entered or restored form content.
+pub(crate) fn is_form_role(role: &str) -> bool {
+    FIELD_ROLES.contains(&role)
+}
+
+fn screen_with_form_values(tree: &str, title: &str, include_form_values: bool) -> Screen {
     let mut candidates = Vec::new();
     let mut context: Vec<String> = Vec::new();
     let mut text_nodes = Vec::new();
@@ -158,11 +186,18 @@ pub(crate) fn screen(tree: &str, title: &str) -> Screen {
     for (order, line) in tree.lines().filter_map(parse_line).enumerate() {
         ancestors.retain(|(depth, _, _)| *depth < line.depth);
         unnamed.retain(|(depth, _)| *depth < line.depth);
+        let inside_field = ancestors
+            .iter()
+            .any(|(_, _, role)| FIELD_ROLES.contains(&role.as_str()));
         // A value-bearing line's value is what was typed or selected into
         // it: private unless values are shared, and never a safe
         // description for an enclosing unnamed container. Its accessible
         // name — a label, not content — still is.
-        let describable = if VALUE_BEARING_ROLES.contains(&line.role.as_str()) {
+        let describable = if !include_form_values
+            && (inside_field || FIELD_ROLES.contains(&line.role.as_str()))
+        {
+            line.name.as_deref().filter(|_| !inside_field)
+        } else if VALUE_BEARING_ROLES.contains(&line.role.as_str()) {
             line.name.as_deref()
         } else {
             line.name.as_deref().or(line.value.as_deref())
@@ -176,35 +211,44 @@ pub(crate) fn screen(tree: &str, title: &str) -> Screen {
             .iter()
             .map(|(_, label, _)| label.clone())
             .collect::<Vec<_>>();
-        let inside_field = ancestors
-            .iter()
-            .any(|(_, _, role)| FIELD_ROLES.contains(&role.as_str()));
         match line.role.as_str() {
             "dialog" if surface == "window" => "sheet".clone_into(&mut surface),
             "alertdialog" => "alert".clone_into(&mut surface),
             _ => {}
         }
-        let node = candidate(&line, path, order);
-        if line.reference().is_some() {
-            if !line.has("disabled") {
-                // A control with no name of its own — a list row whose
-                // `aria-labelledby` points nowhere — is named by what it
-                // shows. A text field — or a control holding a value — is not:
-                // what is inside it is its content, private unless values
-                // are shared.
-                if node.name.is_none()
-                    && node.value.is_none()
-                    && !TEXT_ENTRY_ROLES.contains(&line.role.as_str())
-                {
-                    unnamed.push((line.depth, candidates.len()));
+        if include_form_values || !inside_field {
+            let mut node = candidate(&line, path, order);
+            if !include_form_values && (inside_field || FIELD_ROLES.contains(&line.role.as_str())) {
+                node.value = None;
+                if inside_field && line.reference().is_none() {
+                    // Unreferenced descendants become text_nodes. Their tree
+                    // name can carry the same rich-field body as their value.
+                    node.name = None;
                 }
-                candidates.push(node);
             }
-        } else {
-            if !inside_field {
-                remember(&line, &mut context);
+            if line.reference().is_some() {
+                if !line.has("disabled") {
+                    // A control with no name of its own — a list row whose
+                    // `aria-labelledby` points nowhere — is named by what it
+                    // shows. A text field — or a control holding a value — is not:
+                    // what is inside it is its content, private unless values
+                    // are shared.
+                    if node.name.is_none()
+                        && node.value.is_none()
+                        && !TEXT_ENTRY_ROLES.contains(&line.role.as_str())
+                    {
+                        unnamed.push((line.depth, candidates.len()));
+                    }
+                    candidates.push(node);
+                }
+            } else {
+                let is_field = FIELD_ROLES.contains(&line.role.as_str())
+                    || VALUE_BEARING_ROLES.contains(&line.role.as_str());
+                if !inside_field && !is_field {
+                    remember(&line, &mut context);
+                }
+                text_nodes.push(node);
             }
-            text_nodes.push(node);
         }
         siblings.truncate(line.depth + 1);
         siblings.resize_with(line.depth + 1, Default::default);

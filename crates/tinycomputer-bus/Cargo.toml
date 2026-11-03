@@ -22,5 +22,8 @@ publish = false
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# Base64 keeps binary trace artifacts compact enough for the TinyBus frame cap.
+base64 = { workspace = true }
+
 [lints]
 workspace = true

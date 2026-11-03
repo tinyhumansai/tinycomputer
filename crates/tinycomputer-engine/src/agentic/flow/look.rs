@@ -35,7 +35,8 @@ impl<B: AgentBackend + Sync> FlowRun<'_, B> {
             })
         });
         match observed {
-            Ok(screen) => {
+            Ok(mut screen) => {
+                self.redact_screen(&mut screen);
                 self.blind_looks = 0;
                 if let Some(note) = self.front.look(&screen, self.location.as_deref()) {
                     self.history.push(note.to_owned());
@@ -95,7 +96,8 @@ impl<B: AgentBackend + Sync> FlowRun<'_, B> {
                     "candidates": part.as_ref().map_or(0, |part| part.candidates.len()),
                 })
             });
-            if let Ok(part) = part {
+            if let Ok(mut part) = part {
+                self.redact_screen(&mut part);
                 screen.candidates.extend(part.candidates);
                 screen.context.extend(part.context);
                 screen.text_nodes.extend(part.text_nodes);

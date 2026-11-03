@@ -85,17 +85,17 @@
 //! That is also a structural necessity, not only a preference: `tinybus` is
 //! vendored as a submodule whose manifest inherits fields from its own nested
 //! `[workspace.package]`. A crate that every workspace member can depend on has
-//! to stay transport-free, and staying transport-free is what keeps this crate
-//! down to pure-Rust dependencies: `thiserror`, `serde`, `serde_json`, and
-//! `url`, which provides the shared IDNA-aware HTTP(S) site parser.
+//! to stay transport-free. Its four pure-Rust dependencies are `thiserror`,
+//! `serde`, `serde_json`, and `base64`; the last encodes binary trace artifacts
+//! in the `TraceSinkHost` callback payloads.
 //!
-//! **No session, trace, or skills members.** The engine also offers session
-//! lifecycle, trace read and export, and a bundled documentation loader. They
-//! are process-lifecycle concerns of a CLI rather than of a loaded module: a
-//! module is configured once, at load, and its session identity comes from that
-//! configuration instead of from a member a caller has to remember to invoke.
-//! They are candidates for a later minor version of this contract, which is
-//! why the bind rule in [`version`] treats an added member as compatible.
+//! **No session, trace read/export, or skills members.** The contract includes
+//! `TraceSinkHost` callbacks so a module can send trace events, artifacts, and
+//! requested reports to host-owned storage. It does not expose members to read
+//! or export traces from the engine. Session lifecycle and the bundled
+//! documentation loader are also absent: they are process-lifecycle concerns
+//! of a CLI rather than of a loaded module, whose session identity comes from
+//! its load configuration.
 //!
 //! # This crate sits underneath the implementation, not beside it
 //!
@@ -136,6 +136,7 @@ pub mod observation;
 pub mod site_memory;
 pub mod sites;
 pub mod system;
+pub mod trace_sink;
 pub mod version;
 pub mod vocabulary;
 pub mod waiting;

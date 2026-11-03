@@ -6,6 +6,7 @@ use tinycomputer_bus::JevOperation;
 use tinycomputer_core::Platform;
 use tinycomputer_core::surface::{Depth, Surface};
 
+use crate::action_gate::{ActionContext, ActionGate, ActionRequest, ActionVerdict};
 use tinycomputer_bus::browser::SessionOptions;
 use tinycomputer_core::surface::Candidate;
 
@@ -36,6 +37,113 @@ fn keys_are_spelled_the_way_agent_browser_reads_them() {
         assert_eq!(browser_key(combo, Platform::MacOs), key);
     }
     assert_eq!(browser_key(" + ", Platform::MacOs), "");
+}
+
+#[test]
+fn a_tree_snapshot_ref_does_not_run_sight_only_tab_preparation() {
+    let Harness { fake, surface, .. } = harness("tree-ref-same-tab", page_fake());
+    let screen = surface.observe("shop", None, Depth::Full).unwrap();
+    let search = screen
+        .candidates
+        .iter()
+        .find(|candidate| candidate.name.as_deref() == Some("Search"))
+        .unwrap()
+        .clone();
+    assert!(search.ref_id.starts_with('e'));
+
+    let result = surface.execute(JevOperation::Click, Some(search), None);
+    assert!(result.ok, "{:?}", result.error);
+    assert!(fake.sent().iter().all(|command| {
+        command["action"] != "evaluate"
+            || !command["script"]
+                .as_str()
+                .is_some_and(|script| script.contains("window.__tcOpen"))
+    }));
+}
+
+#[test]
+fn secret_type_preflight_uses_gate_metadata_without_sending_text_to_the_page() {
+    #[derive(Default)]
+    struct RefuseFill(std::sync::Mutex<Vec<ActionRequest>>);
+
+    impl ActionGate for RefuseFill {
+        fn check(&self, request: &ActionRequest) -> ActionVerdict {
+            if request
+                .payload
+                .get("action")
+                .and_then(serde_json::Value::as_str)
+                == Some("fill")
+            {
+                let payload = serde_json::json!({"action": "fill", "value": "[host secret]"});
+                self.0.lock().unwrap().push(ActionRequest {
+                    payload,
+                    target: request.target.clone(),
+                    current_url: request.current_url.clone(),
+                    destination_url: request.destination_url.clone(),
+                    observation: request.observation,
+                    context: request.context.clone(),
+                });
+                ActionVerdict::Refuse {
+                    reason: "secret fill refused".to_owned(),
+                }
+            } else {
+                ActionVerdict::Allow
+            }
+        }
+    }
+
+    let fake = Fake::scripted(|command| match command["action"].as_str().unwrap() {
+        "snapshot" => Some(ok(&json!({"snapshot": PAGE}))),
+        "url" => Some(ok(&json!({"url": "https://shop.test/pay"}))),
+        _ => None,
+    });
+    let gate = std::sync::Arc::new(RefuseFill::default());
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let browser = crate::Browser::with_scratch(
+        std::sync::Arc::new(fake.clone()),
+        std::env::temp_dir().join(format!("tinycomputer-secret-gate-{}", std::process::id())),
+    )
+    .with_action_gate(gate.clone());
+    let surface = crate::surface::BrowserSurface::new(
+        std::sync::Arc::new(browser),
+        SessionOptions::default(),
+        runtime.handle().clone(),
+    )
+    .with_action_context(ActionContext {
+        task_id: Some("task-secret".to_owned()),
+        session_id: None,
+        payment_in_play: true,
+    });
+    let screen = surface.observe("browser", None, Depth::Full).unwrap();
+    let field = screen
+        .candidates
+        .iter()
+        .find(|field| field.name.as_deref() == Some("From"))
+        .unwrap();
+
+    assert!(
+        surface
+            .authorize_secret_type(field)
+            .unwrap_err()
+            .contains("secret fill refused")
+    );
+    let requests = gate.0.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    let request = &requests[0];
+    assert_eq!(
+        request
+            .target
+            .as_ref()
+            .and_then(|target| target.name.as_deref()),
+        Some("From")
+    );
+    assert_eq!(
+        request.current_url.as_deref(),
+        Some("https://shop.test/pay")
+    );
+    assert_eq!(request.context.task_id.as_deref(), Some("task-secret"));
+    assert_eq!(request.payload["value"], "[host secret]");
+    assert!(!fake.actions().iter().any(|action| action == "fill"));
 }
 
 #[test]

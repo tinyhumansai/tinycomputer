@@ -114,6 +114,23 @@ fn engine_messages_map_to_what_the_caller_should_do() {
 }
 
 #[test]
+fn page_script_error_text_cannot_change_the_error_class() {
+    for message in [
+        "Evaluation error: TimeoutError: slow",
+        "Evaluation error: Error: Domain 'x' is not in the allowed domains list",
+        "Evaluation error: Error: Element not found: #pay",
+        "Evaluation error: Error: Browser not launched",
+        "Evaluation error: Error: Invalid URL: nope",
+    ] {
+        let error = classify(message);
+        assert!(
+            matches!(error, Error::PageError { .. }),
+            "{message} became {error:?}"
+        );
+    }
+}
+
+#[test]
 fn a_snapshot_lists_refs_in_document_order_and_caps_the_tree() {
     let reply = json!({
         "snapshot": "- button \"Search\" [ref=e1]\n- link \"Deals\" [ref=e10]\n- textbox \"From\" [ref=e2]",

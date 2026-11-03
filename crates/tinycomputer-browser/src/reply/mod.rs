@@ -44,6 +44,11 @@ pub(crate) fn classify(message: &str) -> Error {
             reference: message.to_owned(),
         };
     }
+    // A script error carries text the page controls, so it is classified
+    // before any keyword below can read that text as a timeout or a refusal.
+    if lower.starts_with("evaluation error") {
+        return Error::page(message);
+    }
     if lower.contains("is not in the allowed domains list") {
         return Error::BlockedByPolicy {
             url: quoted(message).unwrap_or(message).to_owned(),
@@ -92,9 +97,6 @@ pub(crate) fn classify(message: &str) -> Error {
     // command is not wrong — the page is not ready for it yet.
     if lower.contains("dialog is blocking the page") {
         return Error::not_actionable(message);
-    }
-    if lower.starts_with("evaluation error") {
-        return Error::page(message);
     }
     Error::failed(message)
 }

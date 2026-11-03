@@ -65,13 +65,36 @@ const MIN_MASKED_DIGITS: usize = 6;
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Facts {
     values: BTreeMap<String, String>,
+    handles: BTreeMap<String, SecretFactHandle>,
     secret: BTreeSet<String>,
+}
+
+/// A reference to a secret whose value stays with its host.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct SecretFactHandle {
+    /// Opaque host identifier.
+    pub handle: String,
+    /// Safe display mask.
+    pub mask: String,
+    /// Host-defined kind of secret.
+    pub kind: String,
+}
+
+impl std::fmt::Debug for SecretFactHandle {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SecretFactHandle")
+            .field("handle", &"[opaque]")
+            .field("mask", &self.mask)
+            .field("kind", &self.kind)
+            .finish()
+    }
 }
 
 impl std::fmt::Debug for Facts {
     /// Names only: a fact's value never reaches a log.
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.debug_set().entries(self.values.keys()).finish()
+        formatter.debug_set().entries(self.names()).finish()
     }
 }
 
@@ -97,7 +120,46 @@ impl Facts {
             .filter(|(name, value)| is_sensitive_name(name) || is_card_number(value))
             .map(|(name, _)| name.clone())
             .collect();
-        Self { values, secret }
+        Self {
+            values,
+            handles: BTreeMap::new(),
+            secret,
+        }
+    }
+
+    /// Facts from values and host-side secret handles. A name cannot be
+    /// supplied in both maps, and every name in `secret` must exist in one.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::DuplicateFact`] when one name has both a value and a
+    /// handle, [`Error::EmptyFactHandle`] for an empty handle, or
+    /// [`Error::UnknownSecret`] when a requested secret name is missing.
+    pub fn with_handles<N: Into<String>, V: Into<String>, S: Into<String>>(
+        pairs: impl IntoIterator<Item = (N, V)>,
+        handles: impl IntoIterator<Item = (N, SecretFactHandle)>,
+        secret: impl IntoIterator<Item = S>,
+    ) -> Result<Self> {
+        let mut facts = Self::new(pairs);
+        for (name, handle) in handles {
+            let name = name.into();
+            if handle.handle.trim().is_empty() {
+                return Err(Error::EmptyFactHandle { name });
+            }
+            if facts.values.contains_key(&name) {
+                return Err(Error::DuplicateFact { name });
+            }
+            facts.secret.insert(name.clone());
+            facts.handles.insert(name, handle);
+        }
+        for name in secret {
+            let name = name.into();
+            if !facts.values.contains_key(&name) && !facts.handles.contains_key(&name) {
+                return Err(Error::UnknownSecret { name });
+            }
+            facts.secret.insert(name);
+        }
+        Ok(facts)
     }
 
     /// [`Facts::new`], with every name in `secret` kept secret as well.
@@ -126,7 +188,15 @@ impl Facts {
     #[must_use]
     pub fn merged(&self, other: &Self) -> Self {
         let mut merged = self.clone();
-        merged.values.extend(other.values.clone());
+        for (name, value) in &other.values {
+            if !merged.handles.contains_key(name) {
+                merged.values.insert(name.clone(), value.clone());
+            }
+        }
+        for (name, handle) in &other.handles {
+            merged.values.remove(name);
+            merged.handles.insert(name.clone(), handle.clone());
+        }
         merged.secret.extend(other.secret.iter().cloned());
         merged
     }
@@ -137,10 +207,20 @@ impl Facts {
         self.values.get(name).map(String::as_str)
     }
 
+    /// The host-side handle for a fact, if it has no engine-visible value.
+    #[must_use]
+    pub fn handle(&self, name: &str) -> Option<&SecretFactHandle> {
+        self.handles.get(name)
+    }
+
     /// Every fact's name.
     #[must_use]
     pub fn names(&self) -> Vec<&str> {
-        self.values.keys().map(String::as_str).collect()
+        self.values
+            .keys()
+            .chain(self.handles.keys())
+            .map(String::as_str)
+            .collect()
     }
 
     /// Whether the fact called `name` is secret.
@@ -169,7 +249,7 @@ impl Facts {
         wanted
             .iter()
             .map(String::as_str)
-            .filter(|name| !self.values.contains_key(*name))
+            .filter(|name| !self.values.contains_key(*name) && !self.handles.contains_key(*name))
             .collect()
     }
 

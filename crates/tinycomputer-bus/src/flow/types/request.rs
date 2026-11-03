@@ -9,6 +9,7 @@ use serde_json::Value;
 use super::Flow;
 #[cfg(doc)]
 use super::{FlowRunResult, StepReport};
+use crate::agent::SecretHandle;
 
 /// One Jev decision loop.
 ///
@@ -175,6 +176,13 @@ pub struct RunFlowRequest {
     /// Every other variable is shared: its value may appear in step text and
     /// in [`RunFlowRequest::brief`].
     pub facts: BTreeSet<String>,
+    /// Host-only handles for named secret facts, resolved only when a field
+    /// is typed.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub fact_handles: BTreeMap<String, SecretHandle>,
+    /// The task making this run, for host-side secret resolution.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
     /// Whether `stop_before` steps may perform their irreversible action.
     pub allow_destructive: bool,
     /// Whether ordinary field values may leave the machine for Jev.
@@ -188,6 +196,11 @@ pub struct RunFlowRequest {
     /// answers are averaged: 1 asks once. Jev calls are cheap, so accuracy
     /// is bought with more of them. Capped by the module at 9.
     pub votes: u32,
+    /// Turns a `do` step may spend before it fails as not accomplished; the
+    /// module's default (8) when unset, capped by the module at 32. A shop's
+    /// checkout can need more moves in one step than a desktop app does.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_do_turns: Option<u32>,
     /// Who the run is for and what it is after, shown to Jev with every
     /// question so each small decision is made knowing the whole task.
     pub brief: FlowBrief,
@@ -226,11 +239,14 @@ impl Default for RunFlowRequest {
             flow: Flow::default(),
             vars: BTreeMap::new(),
             facts: BTreeSet::new(),
+            fact_handles: BTreeMap::new(),
+            task_id: None,
             allow_destructive: false,
             include_values: false,
             max_actions: 60,
             max_model_calls: 3000,
             votes: 7,
+            max_do_turns: None,
             brief: FlowBrief::default(),
             disabled_loops: Vec::new(),
             memory: Vec::new(),

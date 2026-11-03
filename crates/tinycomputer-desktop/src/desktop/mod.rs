@@ -49,6 +49,7 @@ mod observation;
 mod permission;
 mod reply;
 mod system;
+mod trace;
 mod waiting;
 
 use std::path::PathBuf;
@@ -80,13 +81,31 @@ use permission::Need;
 /// assert!(reply.ok);
 /// assert!(reply.data.is_some());
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct Desktop {
     session_id: Option<String>,
     trace_path: Option<PathBuf>,
     trace_strict: bool,
     headed: bool,
     cursor: Option<Arc<ScreenCursor>>,
+    trace_sink: Option<Arc<dyn agent_desktop_core::TraceSink>>,
+}
+
+impl std::fmt::Debug for Desktop {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Desktop")
+            .field("session_id", &self.session_id)
+            .field("trace_path", &self.trace_path)
+            .field("trace_strict", &self.trace_strict)
+            .field("headed", &self.headed)
+            .field("cursor", &self.cursor)
+            .field(
+                "trace_sink",
+                &self.trace_sink.as_ref().map(|_| "configured"),
+            )
+            .finish()
+    }
 }
 
 impl Desktop {
@@ -120,28 +139,6 @@ impl Desktop {
     #[must_use]
     pub fn with_session(mut self, session_id: impl Into<String>) -> Self {
         self.session_id = Some(session_id.into());
-        self
-    }
-
-    /// Returns this `Desktop` writing a command trace to `path`.
-    ///
-    /// A trace records each command and its outcome, which is what makes a
-    /// failed run reconstructable afterwards. `strict` additionally fails a
-    /// command whose trace could not be written, rather than letting it succeed
-    /// with no record — the right setting when the trace is the audit log
-    /// rather than a debugging aid.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use tinycomputer_desktop::Desktop;
-    /// let desktop = Desktop::new().with_trace("/tmp/run.jsonl", false);
-    /// assert!(desktop.is_tracing());
-    /// ```
-    #[must_use]
-    pub fn with_trace(mut self, path: impl Into<PathBuf>, strict: bool) -> Self {
-        self.trace_path = Some(path.into());
-        self.trace_strict = strict;
         self
     }
 
@@ -236,6 +233,7 @@ impl Desktop {
             trace_strict: flag(object.get("trace_strict"), "trace_strict")?,
             headed: flag(object.get("headed"), "headed")?,
             cursor: None,
+            trace_sink: None,
         })
     }
 
@@ -252,34 +250,6 @@ impl Desktop {
         self.session_id.as_deref()
     }
 
-    /// Whether commands write a trace.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use tinycomputer_desktop::Desktop;
-    /// assert!(!Desktop::new().is_tracing());
-    /// ```
-    #[must_use]
-    pub fn is_tracing(&self) -> bool {
-        self.trace_path.is_some()
-    }
-
-    /// Where commands write their trace, if anywhere.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use std::path::Path;
-    /// # use tinycomputer_desktop::Desktop;
-    /// let desktop = Desktop::new().with_trace("/tmp/run.jsonl", true);
-    /// assert_eq!(desktop.trace_path(), Some(Path::new("/tmp/run.jsonl")));
-    /// ```
-    #[must_use]
-    pub fn trace_path(&self) -> Option<&std::path::Path> {
-        self.trace_path.as_deref()
-    }
-
     /// Whether ref actions may take focus and move the real cursor.
     ///
     /// # Examples
@@ -293,16 +263,6 @@ impl Desktop {
         self.headed
     }
 
-    /// Builds the engine context every command runs under.
-    fn context(&self) -> std::result::Result<CommandContext, AppError> {
-        CommandContext::new(
-            self.session_id.clone(),
-            self.trace_path.clone(),
-            self.trace_strict,
-        )
-        .map(|context| context.with_headed(self.headed))
-    }
-
     /// Runs `command` under a fresh adapter and context, and wraps whatever it
     /// produces in the envelope.
     ///
@@ -310,7 +270,7 @@ impl Desktop {
     /// permission report is fetched and checked first: fetching one costs a
     /// round trip to the platform, so a command that needs no permission does
     /// not pay for it.
-    fn run<F>(&self, command: &str, need: Need, run: F) -> DesktopResponse
+    fn run<F>(&self, command: &'static str, need: Need, run: F) -> DesktopResponse
     where
         F: FnOnce(&dyn PlatformAdapter, &CommandContext) -> std::result::Result<Value, AppError>,
     {
@@ -320,7 +280,7 @@ impl Desktop {
     }
 
     /// [`Desktop::run`] for the two members that also read the report itself.
-    fn run_with_report<F>(&self, command: &str, need: Need, run: F) -> DesktopResponse
+    fn run_with_report<F>(&self, command: &'static str, need: Need, run: F) -> DesktopResponse
     where
         F: FnOnce(
             &dyn PlatformAdapter,
@@ -332,9 +292,12 @@ impl Desktop {
         let adapter: &dyn PlatformAdapter = &adapter;
 
         let result = self.context().and_then(|context| {
-            let report = permission::report(need, adapter)?;
-            permission::preflight(need, &report)?;
-            run(adapter, &context, &report)
+            let scope = context.command_scope(command)?;
+            let result = permission::report(need, adapter)
+                .and_then(|report| permission::preflight(need, &report).map(|()| report))
+                .and_then(|report| run(adapter, &context, &report));
+            scope.complete(&result)?;
+            result
         });
 
         reply::envelope(command, result)
@@ -396,3 +359,7 @@ fn platform_adapter() -> impl PlatformAdapter {
 
 #[cfg(test)]
 mod desktop_tests;
+
+#[cfg(test)]
+#[path = "trace_sink_tests.rs"]
+mod trace_sink_tests;

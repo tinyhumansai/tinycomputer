@@ -3,7 +3,10 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use serde_json::{Value, json};
 
@@ -38,6 +41,8 @@ pub(crate) struct Fake {
     script: Arc<Script>,
     stall: Arc<Stall>,
     focus: PageFocus,
+    close_delay: Option<Duration>,
+    fail_close: bool,
 }
 
 impl std::fmt::Debug for Fake {
@@ -59,6 +64,8 @@ impl Fake {
             script: Arc::new(script),
             stall: Arc::new(|_| false),
             focus: PageFocus::OnTarget,
+            close_delay: None,
+            fail_close: false,
         }
     }
 
@@ -76,6 +83,19 @@ impl Fake {
         stall: impl Fn(&Value) -> bool + Send + Sync + 'static,
     ) -> Self {
         self.stall = Arc::new(stall);
+        self
+    }
+
+    /// Delays the engine's `close` response, as a browser that takes time to
+    /// flush its profile before it exits.
+    pub(crate) fn delaying_close(mut self, delay: Duration) -> Self {
+        self.close_delay = Some(delay);
+        self
+    }
+
+    /// Makes the engine fail when the caller asks it to close the browser.
+    pub(crate) fn failing_close(mut self) -> Self {
+        self.fail_close = true;
         self
     }
 
@@ -176,11 +196,22 @@ impl Engine for Fake {
         if (self.stall)(&command) {
             return Box::pin(std::future::pending());
         }
-        let reply = self
-            .focus_reply(&command)
-            .or_else(|| (self.script)(&command))
-            .unwrap_or_else(|| default_reply(&command));
-        Box::pin(async move { reply })
+        let reply = if command["action"] == "close" && self.fail_close {
+            failure("browser close failed")
+        } else {
+            self.focus_reply(&command)
+                .or_else(|| (self.script)(&command))
+                .unwrap_or_else(|| default_reply(&command))
+        };
+        let delay = (command["action"] == "close")
+            .then_some(self.close_delay)
+            .flatten();
+        Box::pin(async move {
+            if let Some(delay) = delay {
+                tokio::time::sleep(delay).await;
+            }
+            reply
+        })
     }
 }
 

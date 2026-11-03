@@ -125,7 +125,10 @@ These are additive to the grammar in [`jev-intent-flows.md`](jev-intent-flows.md
   pre-matched.
 - **Facts store:** shared facts brief Jev by value; secret facts (cards,
   passports, passwords, one-time codes) reach Jev and the planner only as
-  `${name}` and are masked out of every request
+  `${name}` and are masked out of every request. Hosts that keep values out of
+  the engine use `StartTask.fact_handles`; an installed `SecretHost` receives
+  the selected field and live task/page context to type the value, then
+  redacts any page echo before it reaches Jev or a report
   ([`jev-briefing.md`](jev-briefing.md)).
 - **Safety gate:** irreversible labels, plus a payment detector that looks for
   `cc-*` fields, card-number or CVV inputs, checkout URLs and pay labels.

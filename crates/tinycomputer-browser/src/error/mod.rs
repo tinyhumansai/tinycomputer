@@ -98,6 +98,13 @@ pub enum Error {
         url: String,
     },
 
+    /// The trusted host's action policy refused a request before it reached the page.
+    #[error("action refused by host: {reason}")]
+    ActionRefused {
+        /// The host's refusal reason.
+        reason: String,
+    },
+
     /// No browser could be launched or reached.
     #[error("browser unavailable: {message}")]
     BrowserUnavailable {
@@ -175,6 +182,7 @@ impl Error {
             Self::PageError { .. } => errors::PAGE_ERROR,
             Self::NoSuchOutput { .. } => errors::NO_SUCH_OUTPUT,
             Self::LimitExceeded { .. } => errors::LIMIT_EXCEEDED,
+            Self::ActionRefused { .. } => errors::BLOCKED_BY_POLICY,
             Self::ModuleFailed { .. } => errors::MODULE_FAILED,
         }
     }
@@ -243,6 +251,9 @@ impl Error {
             Self::LimitExceeded { .. } => {
                 Some("close sessions or release outputs you no longer need")
             }
+            Self::ActionRefused { .. } => {
+                Some("follow the host policy before retrying this action")
+            }
             Self::InvalidInput { .. }
             | Self::Timeout { .. }
             | Self::BrowserUnavailable { .. }
@@ -268,6 +279,7 @@ impl Error {
                 | Self::NoSuchOutput { .. }
                 | Self::StaleRef { .. }
                 | Self::BlockedByPolicy { .. }
+                | Self::ActionRefused { .. }
         )
     }
 

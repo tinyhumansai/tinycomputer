@@ -5,12 +5,13 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use tinycomputer_browser::{
-    Browser, BrowserSurface, ScreenCursor, ScreenshotRequest, SessionOptions,
+    ActionContext, Browser, BrowserSurface, ScreenCursor, ScreenshotRequest, SessionOptions,
 };
 use tinycomputer_bus::DesktopResponse;
-use tinycomputer_bus::agent::{SurfaceKind, TaskConstraints, TaskId};
+use tinycomputer_bus::agent::{PaymentMode, SurfaceKind, TaskConstraints, TaskId};
 use tinycomputer_engine::{
-    CaptureFuture, FlowFuture, FlowRunner, JevRuntime, PrepareFuture, TextFuture, Workspace,
+    CaptureFuture, FlowFuture, FlowRunner, JevRuntime, PrepareFuture, TextFuture, UsageRecorder,
+    Workspace,
 };
 
 use super::config::BrowserDefaults;
@@ -72,6 +73,11 @@ impl WorkspaceRunner {
                     tokio::runtime::Handle::current(),
                 )
                 .with_cursor(self.cursor.clone())
+                .with_action_context(ActionContext {
+                    task_id: Some(task.0.clone()),
+                    session_id: None,
+                    payment_in_play: constraints.payment == PaymentMode::FillThenApprove,
+                })
                 .with_perception(self.defaults.perception)
                 .with_settle(self.defaults.settle)
             });
@@ -108,6 +114,51 @@ impl FlowRunner for WorkspaceRunner {
             runtime,
             request,
         ))
+    }
+
+    fn run_with_usage(
+        &self,
+        task: &TaskId,
+        constraints: &TaskConstraints,
+        request: tinycomputer_bus::RunFlowRequest,
+        usage: Arc<UsageRecorder>,
+    ) -> FlowFuture {
+        let Some(runtime) = self.jev.as_ref() else {
+            return Box::pin(async { jev_not_configured("run-flow") });
+        };
+        // Keep model measurements scoped to the task, across its continuations.
+        let runtime = runtime
+            .clone()
+            .with_usage_recorder(usage)
+            .journaled_as(&format!("task-{task}"));
+        Box::pin(tinycomputer_engine::run_flow(
+            self.workspace(task, constraints),
+            runtime,
+            request,
+        ))
+    }
+
+    fn page_origin(&self, task: &TaskId) -> tinycomputer_engine::PageOriginFuture {
+        let session = self.workspaces.lock().ok().and_then(|workspaces| {
+            workspaces
+                .get(task)
+                .and_then(|(_, browser)| browser.as_ref()?.session())
+        });
+        let Some(session) = session else {
+            return Box::pin(async { None });
+        };
+        let browser = self.browser.clone();
+        Box::pin(async move {
+            let page = browser
+                .snapshot(&session, tinycomputer_browser::SnapshotRequest::default())
+                .await
+                .ok()?;
+            let url = url::Url::parse(&page.url).ok()?;
+            if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+                return None;
+            }
+            Some(format!("{}/", url.origin().ascii_serialization()))
+        })
     }
 
     fn visible_text(&self, task: &TaskId) -> TextFuture {
@@ -208,6 +259,21 @@ impl FlowRunner for WorkspaceRunner {
         };
         // Journaled with the task's flows (see `run`).
         let runtime = runtime.journaled_as(&format!("task-{task}"));
+        Box::pin(async move { runtime.warm(votes).await })
+    }
+
+    fn warm_with_usage(
+        &self,
+        task: &TaskId,
+        votes: u32,
+        usage: Arc<UsageRecorder>,
+    ) -> PrepareFuture {
+        let Some(runtime) = self.jev.as_ref() else {
+            return Box::pin(async {});
+        };
+        let runtime = runtime
+            .journaled_as(&format!("task-{task}"))
+            .with_usage_recorder(usage);
         Box::pin(async move { runtime.warm(votes).await })
     }
 

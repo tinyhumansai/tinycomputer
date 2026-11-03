@@ -10,23 +10,28 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tinycomputer_bus::agent::LanguageModelProvider;
+use tinycomputer_bus::agent::{LanguageModelConfiguration, LanguageModelProvider};
 use tinyinference_llm::model::{
     ReasoningConfig, ReasoningEffort, ResponseFormat, collect_model_stream,
 };
 use tinyinference_llm::providers::openai::OpenAiModel;
+use tinyinference_llm::usage::Usage;
 use tinyinference_llm::{
     ChatModel, Error, Message, ModelRequest, ProviderKind, ProviderSpec, classify_provider_error,
     classify_provider_failure,
 };
 
 use super::config::{
-    ModelRoute, OUTPUT_MODEL, PLANNER_MODEL, PlannerConfig, RESCUE_MODEL, describe_route,
-    resolve_route,
+    HostModelConfig, HostModels, ModelRoute, OUTPUT_MODEL, PLANNER_MODEL, PlannerConfig,
+    RESCUE_MODEL, describe_route, resolve_route,
 };
-use super::{Completion, LanguageModel, Planner, Role, Turn};
+use super::{
+    Completion, LanguageModel, ModelFailure, ModelReply, Planner, ReportedCompletion,
+    ReportedUsage, Role, Turn,
+};
 use crate::rescue::Rescuer;
 use crate::shape::Shaper;
+use crate::{ModelRole, UsageRecorder};
 
 /// A [`Planner`] configured by `config`, on its route: `OpenRouter` unless
 /// `provider` says `tiny_humans`.
@@ -91,6 +96,75 @@ pub fn open_router_shaper(config: &PlannerConfig) -> Result<Shaper, String> {
     .with_configuration(describe_route(&config.route, &model)))
 }
 
+/// Builds planner, rescue, and output adapters from host-owned compatible
+/// endpoints. Missing rescue or output routes reuse the planner model.
+///
+/// This constructor accepts any base URL because a Rust embedding host owns
+/// the route. `TinyBus` configuration continues to use the fixed provider
+/// allow-list.
+///
+/// # Errors
+///
+/// Returns why a supplied host route cannot build a model client.
+pub fn openai_compatible_models(models: &HostModels) -> Result<(Planner, Rescuer, Shaper), String> {
+    let planner = host_role(&models.planner, Some(0.2), None, 4_000)?;
+    let rescue = host_role(
+        models.rescue.as_ref().unwrap_or(&models.planner),
+        None,
+        Some(ReasoningEffort::Low),
+        8_000,
+    )?;
+    let output = host_role(
+        models.output.as_ref().unwrap_or(&models.planner),
+        None,
+        Some(ReasoningEffort::Low),
+        16_000,
+    )?;
+    Ok((
+        Planner::new(planner.0).with_configuration(planner.1),
+        Rescuer::new(rescue.0).with_configuration(rescue.1),
+        Shaper::new(output.0).with_configuration(output.1),
+    ))
+}
+
+fn host_role(
+    config: &HostModelConfig,
+    temperature: Option<f64>,
+    reasoning: Option<ReasoningEffort>,
+    max_tokens: u32,
+) -> Result<(Arc<dyn LanguageModel>, LanguageModelConfiguration), String> {
+    if config.api_key.trim().is_empty() {
+        return Err("host model configuration needs an api_key".to_owned());
+    }
+    if config.base_url.trim().is_empty() {
+        return Err("host model configuration needs a base_url".to_owned());
+    }
+    if config.model.trim().is_empty() {
+        return Err("host model configuration needs a model".to_owned());
+    }
+    let base_url = config.base_url.trim_end_matches('/').to_owned();
+    let spec = ProviderSpec::for_kind(ProviderKind::Compatible)
+        .with_model(config.model.clone())
+        .with_base_url(base_url.clone());
+    let model = OpenAiModel::from_spec(spec, config.api_key.clone())
+        .map_err(|error| error.to_string())?
+        .with_json_object_format(true);
+    let configuration = LanguageModelConfiguration {
+        provider: LanguageModelProvider::OpenAiCompatible,
+        model: config.model.clone(),
+        endpoint_url: Some(base_url),
+    };
+    Ok((
+        Arc::new(Hosted {
+            model: Arc::new(model),
+            temperature,
+            reasoning,
+            max_tokens,
+        }),
+        configuration,
+    ))
+}
+
 /// `configured`, unless absent or blank, else `default`.
 fn model_name(configured: Option<&String>, default: &str) -> String {
     configured
@@ -105,6 +179,9 @@ pub(super) fn chat_model(route: &ModelRoute, model: &str) -> Result<Arc<OpenAiMo
     let kind = match resolved.provider {
         LanguageModelProvider::OpenRouter => ProviderKind::OpenRouter,
         LanguageModelProvider::TinyHumans => ProviderKind::TinyHumans,
+        LanguageModelProvider::OpenAiCompatible => {
+            return Err("open_ai_compatible routes require the host constructor".to_owned());
+        }
     };
     let spec = ProviderSpec::for_kind(kind)
         .with_model(model)
@@ -127,6 +204,36 @@ struct Hosted {
 
 impl LanguageModel for Hosted {
     fn complete(&self, turns: &[Turn]) -> Completion {
+        let completion = self.complete_reported(turns);
+        Box::pin(async move {
+            completion
+                .await
+                .map(|reply| reply.text)
+                .map_err(|error| error.message)
+        })
+    }
+
+    fn complete_reported(&self, turns: &[Turn]) -> ReportedCompletion {
+        self.complete_reported_for_task(turns, None, ModelRole::Planner)
+    }
+
+    fn complete_for_task(
+        &self,
+        turns: &[Turn],
+        usage: Option<Arc<UsageRecorder>>,
+        role: ModelRole,
+    ) -> ReportedCompletion {
+        self.complete_reported_for_task(turns, usage, role)
+    }
+}
+
+impl Hosted {
+    fn complete_reported_for_task(
+        &self,
+        turns: &[Turn],
+        usage: Option<Arc<UsageRecorder>>,
+        role: ModelRole,
+    ) -> ReportedCompletion {
         let model = self.model.clone();
         let messages = turns
             .iter()
@@ -150,19 +257,66 @@ impl LanguageModel for Hosted {
             // for 60 seconds, and a reasoning model's whole reply can take
             // longer. A route that ignores streaming still answers in one
             // piece.
-            with_retries(|| {
-                let model = model.clone();
-                let request = request.clone();
-                async move {
-                    let stream = model.stream(&(), request).await?;
-                    let response = collect_model_stream(stream).await?;
-                    Ok(Message::Assistant(response.message).text())
+            let usage_recorder = usage;
+            let recorder = usage_recorder.clone();
+            let (result, attempts) = with_retries_observed(
+                || {
+                    let model = model.clone();
+                    let request = request.clone();
+                    async move {
+                        let stream = model.stream(&(), request).await?;
+                        let response = collect_model_stream(stream).await?;
+                        let usage = reported_usage(response.usage.as_ref());
+                        Ok((Message::Assistant(response.message).text(), usage))
+                    }
+                },
+                || {
+                    if let Some(recorder) = &recorder {
+                        recorder.record_started(role);
+                    }
+                },
+            )
+            .await;
+            match result {
+                Ok((text, usage)) => {
+                    if let Some(recorder) = &usage_recorder {
+                        recorder.record_measurements(
+                            role,
+                            usage.input_tokens,
+                            usage.cached_input_tokens,
+                            usage.output_tokens,
+                            usage.cost_usd_nanos,
+                        );
+                    }
+                    Ok(ModelReply {
+                        text,
+                        usage,
+                        attempts,
+                    })
                 }
-            })
-            .await
-            .map_err(|error| error.to_string())
+                Err(error) => Err(ModelFailure {
+                    message: error.to_string(),
+                    attempts,
+                }),
+            }
         })
     }
+}
+
+pub(super) fn reported_usage(usage: Option<&Usage>) -> ReportedUsage {
+    let Some(usage) = usage else {
+        return ReportedUsage::default();
+    };
+    ReportedUsage {
+        input_tokens: reported_count(usage.input_tokens),
+        cached_input_tokens: reported_count(usage.cache_read_tokens),
+        output_tokens: reported_count(usage.output_tokens),
+        cost_usd_nanos: usage.charged_amount_nanos,
+    }
+}
+
+fn reported_count(value: u64) -> Option<u64> {
+    (value > 0).then_some(value)
 }
 
 /// How many times one model call is tried when it fails in passing — a
@@ -173,19 +327,33 @@ const MODEL_TRIES: u32 = 4;
 
 /// Runs `call` until it answers, fails in a way another try cannot mend, or
 /// has failed [`MODEL_TRIES`] times.
+#[cfg(test)]
 pub(super) async fn with_retries<T, C, F>(mut call: C) -> Result<T, Error>
 where
     C: FnMut() -> F,
     F: Future<Output = Result<T, Error>>,
 {
-    let mut tries = 1;
+    with_retries_observed(&mut call, || {}).await.0
+}
+
+pub(super) async fn with_retries_observed<T, C, F, O>(
+    mut call: C,
+    mut on_attempt: O,
+) -> (Result<T, Error>, u32)
+where
+    C: FnMut() -> F,
+    F: Future<Output = Result<T, Error>>,
+    O: FnMut(),
+{
+    let mut tries = 0_u32;
     loop {
+        tries = tries.saturating_add(1);
+        on_attempt();
         match call().await {
             Err(error) if tries < MODEL_TRIES && passing(&error) => {
                 tokio::time::sleep(Duration::from_secs(1 << (tries - 1))).await;
-                tries += 1;
             }
-            outcome => return outcome,
+            outcome => return (outcome, tries),
         }
     }
 }

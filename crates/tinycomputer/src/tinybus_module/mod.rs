@@ -25,6 +25,7 @@ mod consequence_gate;
 mod dispatch;
 mod runner;
 mod site_memory;
+mod trace_sink;
 
 use serde_json::Value;
 use tinybus::{Connection, Result as TinyBusResult};
@@ -39,14 +40,19 @@ pub(crate) use dispatch::DesktopService;
 /// silently ignoring the session it was told to join would allocate refs
 /// nothing else can spend.
 async fn setup(connection: Connection, config: Value) -> TinyBusResult<()> {
-    let service = DesktopService::from_config_with_connection(&config, connection.clone())?;
+    let consequence_host = config::consequence_host_destination(&config)
+        .map_err(|error| tinybus::Error::failed(error.to_string()))?;
+    let service = DesktopService::from_config_with_connection(&config, connection.clone())
+        .map_err(|error| tinybus::Error::failed(error.to_string()))?;
     // The host's per-site memory; a host that does not serve it only costs
     // tasks what earlier ones learned.
     let service = service.with_site_memory(Box::new(site_memory::BusPort::new(connection.clone())));
     // The host's consequence review; a host that does not serve it leaves a
     // task's own approval pause as the only gate.
-    let service = service
-        .with_consequence_review(Box::new(consequence_gate::BusPort::new(connection.clone())));
+    let service = service.with_consequence_review(Box::new(consequence_gate::BusPort::new(
+        connection.clone(),
+        consequence_host,
+    )));
     #[cfg(test)]
     let service = service.with_native_fixture();
     service.sweep_outputs();
@@ -94,6 +100,7 @@ tinybus_module::module_export_optional_static! {
     optional = [
         "ai.tinyhumans.tinycomputer.SiteMemoryHost",
         "ai.tinyhumans.tinycomputer.ConsequenceHost",
+        "ai.tinyhumans.tinycomputer.TraceSinkHost",
         "ai.tinyhumans.tinycomputer.BrowserEgressHost",
     ],
     lazy = false,
@@ -102,6 +109,9 @@ tinybus_module::module_export_optional_static! {
 #[cfg(all(test, feature = "static-link"))]
 #[path = "static_link_tests.rs"]
 mod static_link_tests;
+
+#[cfg(all(test, feature = "static-link", live_module_browser_egress_tests))]
+mod browser_egress_live_tests;
 
 #[cfg(test)]
 mod tinybus_module_tests;

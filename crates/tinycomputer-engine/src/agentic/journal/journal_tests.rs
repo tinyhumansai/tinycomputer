@@ -117,6 +117,8 @@ fn a_begun_run_writes_a_run_event_then_each_exchange() {
             usage: Usage {
                 input_tokens: Some(120),
                 output_tokens: Some(4),
+                cached_input_tokens: None,
+                cost_usd_nanos: None,
             },
         },
         request_id: Some("req-1".to_owned()),

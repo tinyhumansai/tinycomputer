@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::TaskId;
+use super::{TaskId, TaskUsage};
 use crate::browser::OutputRef;
 
 /// A task's current state, as every call reports it.
@@ -25,6 +25,10 @@ pub struct TaskView {
     /// The member calls that make sense now, such as `AwaitTask` or
     /// `ContinueTask`.
     pub next: Vec<String>,
+    /// Provider-reported model usage accumulated so far, including on a
+    /// cancelled or timed-out task.
+    #[serde(default, skip_serializing_if = "TaskUsage::is_empty")]
+    pub usage: TaskUsage,
 }
 
 /// The step a task is on.

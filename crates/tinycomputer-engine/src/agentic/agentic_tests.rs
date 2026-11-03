@@ -366,6 +366,7 @@ fn runtime_recording(
             pending: Arc::new(Mutex::new(std::collections::HashMap::new())),
             journal: super::journal::Journal::default(),
             copies: Arc::default(),
+            usage: None,
         },
         requests,
     )

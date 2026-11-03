@@ -32,11 +32,20 @@ mod swift_source;
 
 #[cfg(target_os = "macos")]
 pub(crate) fn private_cache_dir(name: &str) -> Result<std::path::PathBuf, String> {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
-
     let temp_dir = std::fs::canonicalize(std::env::temp_dir())
         .map_err(|error| format!("failed to resolve temporary directory: {error}"))?;
-    let temp_metadata = std::fs::symlink_metadata(&temp_dir)
+    private_cache_dir_in(&temp_dir, name)
+}
+
+/// [`private_cache_dir`] under `temp_dir`, an already-resolved directory.
+#[cfg(target_os = "macos")]
+fn private_cache_dir_in(
+    temp_dir: &std::path::Path,
+    name: &str,
+) -> Result<std::path::PathBuf, String> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    let temp_metadata = std::fs::symlink_metadata(temp_dir)
         .map_err(|error| format!("failed to inspect temporary directory: {error}"))?;
     if !temp_metadata.is_dir()
         || temp_metadata.mode() & 0o077 != 0

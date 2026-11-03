@@ -207,6 +207,12 @@ fn the_browser_configuration_is_read_or_refused() {
     assert_eq!(defaults.perception, Perception::Tree);
     assert_eq!(defaults.settle, Settle::Steady);
     assert!(!defaults.prelaunch);
+    let egress = BrowserDefaults::from_config(&json!({"browser": {
+        "egress": {"policy_id": "host-policy", "generation": 7}
+    }}))
+    .unwrap();
+    assert_eq!(egress.egress.as_ref().unwrap().policy_id, "host-policy");
+    assert_eq!(egress.egress.as_ref().unwrap().generation, 7);
     // Settling promptly and opening the browser early are on unless turned
     // off.
     let unset = BrowserDefaults::default();
@@ -227,6 +233,9 @@ fn the_browser_configuration_is_read_or_refused() {
         json!({"browser": {"settle": "fast"}}),
         json!({"browser": {"prelaunch": "yes"}}),
         json!({"browser": {"useragent": "typo"}}),
+        json!({"browser": {"egress": {"policy_id": "", "generation": 0}}}),
+        json!({"browser": {"egress": {"policy_id": "p", "generation": 1, "extra": true}}}),
+        json!({"browser": {"egress": {"policy_id": "p", "generation": 1}, "args": ["--proxy-server=bad"]}}),
     ] {
         assert!(
             serde_json::from_value::<ComputerConfig>(invalid.clone()).is_err(),
@@ -298,4 +307,84 @@ fn the_cursor_is_configured_or_refused() {
         assert!(DesktopService::from_config(&wrong).is_err(), "{wrong}");
     }
     assert!(DesktopService::from_config(&json!({"cursor": "off"})).is_ok());
+}
+
+#[test]
+fn trace_sink_requires_the_host_prepared_unique_destination() {
+    use crate::tinybus_module::config::trace_sink_destination;
+
+    assert!(trace_sink_destination(&json!({})).unwrap().is_none());
+    assert!(
+        trace_sink_destination(&json!({"trace_sink": false}))
+            .unwrap()
+            .is_none()
+    );
+    assert!(trace_sink_destination(&json!({"trace_sink": true})).is_err());
+    assert!(trace_sink_destination(&json!({"trace_sink": {}})).is_err());
+    assert!(
+        trace_sink_destination(&json!({
+            "trace_sink": {"destination": ":1.42", "scope": "caller-selected"}
+        }))
+        .is_err()
+    );
+    assert!(
+        trace_sink_destination(&json!({"trace_sink": {"destination": "org.example.Host"}}))
+            .is_err()
+    );
+    assert_eq!(
+        trace_sink_destination(&json!({"trace_sink": {"destination": ":1.42"}}))
+            .unwrap()
+            .unwrap()
+            .as_str(),
+        ":1.42"
+    );
+}
+
+#[test]
+fn consequence_host_requires_the_host_prepared_unique_destination() {
+    use crate::tinybus_module::config::consequence_host_destination;
+
+    assert!(consequence_host_destination(&json!({})).unwrap().is_none());
+    assert!(
+        consequence_host_destination(&json!({"consequence_host": false}))
+            .unwrap()
+            .is_none()
+    );
+    for invalid in [
+        json!({"consequence_host": true}),
+        json!({"consequence_host": {}}),
+        json!({"consequence_host": {"destination": "ai.tinyhumans.host"}}),
+        json!({"consequence_host": {"destination": ":1.42", "scope": "model"}}),
+    ] {
+        assert!(consequence_host_destination(&invalid).is_err(), "{invalid}");
+    }
+    assert_eq!(
+        consequence_host_destination(&json!({
+            "consequence_host": {"destination": ":1.42"}
+        }))
+        .unwrap()
+        .unwrap()
+        .as_str(),
+        ":1.42"
+    );
+}
+
+#[test]
+fn connectionless_service_construction_rejects_consequence_host_configuration() {
+    let error = DesktopService::from_config(&json!({
+        "consequence_host": {"destination": ":1.42"}
+    }))
+    .expect_err("a host callback needs the module's bus connection");
+
+    assert!(error.to_string().contains("consequence_host"));
+}
+
+#[test]
+fn connectionless_service_construction_rejects_trace_sink_configuration() {
+    let error = DesktopService::from_config(&json!({
+        "trace_sink": {"destination": ":1.42"}
+    }))
+    .expect_err("a host callback needs the module's bus connection");
+
+    assert!(error.to_string().contains("trace_sink"));
 }

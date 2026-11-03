@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::TaskView;
+use super::{TaskUsage, TaskView};
 use crate::browser::OutputRef;
 use crate::flow::{Flow, FlowStep, GroundingHint, JevExchange, StepReport};
 
@@ -13,6 +13,9 @@ use crate::flow::{Flow, FlowStep, GroundingHint, JevExchange, StepReport};
 pub struct TaskReport {
     /// The task as it stands.
     pub view: TaskView,
+    /// Provider-reported model usage accumulated over the task's lifetime.
+    #[serde(default, skip_serializing_if = "TaskUsage::is_empty")]
+    pub usage: TaskUsage,
     /// The flow it ran.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flow: Option<Flow>,

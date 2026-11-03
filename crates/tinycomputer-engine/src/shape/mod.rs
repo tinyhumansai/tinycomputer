@@ -24,6 +24,7 @@ use serde_json::{Value, json};
 use tinycomputer_bus::agent::{LanguageModelConfiguration, TaskOutput};
 
 use crate::planner::{LanguageModel, REPAIRS, Role, Turn, json_object};
+use crate::{ModelRole, UsageRecorder};
 
 /// The most characters of records one shaping pass carries.
 pub const RECORDS_CHARS: usize = 60_000;
@@ -57,6 +58,7 @@ pub struct Harvest {
 pub struct Shaper {
     model: Arc<dyn LanguageModel>,
     configuration: Option<LanguageModelConfiguration>,
+    usage: Option<Arc<UsageRecorder>>,
 }
 
 impl std::fmt::Debug for Shaper {
@@ -72,6 +74,7 @@ impl Shaper {
         Self {
             model,
             configuration: None,
+            usage: None,
         }
     }
 
@@ -80,6 +83,13 @@ impl Shaper {
     #[must_use]
     pub fn with_configuration(mut self, configuration: LanguageModelConfiguration) -> Self {
         self.configuration = Some(configuration);
+        self
+    }
+
+    /// This shaper recording calls into a task-scoped collector.
+    #[must_use]
+    pub fn with_usage_recorder(mut self, usage: Arc<UsageRecorder>) -> Self {
+        self.usage = Some(usage);
         self
     }
 
@@ -102,9 +112,13 @@ impl Shaper {
         ];
         let mut last = String::new();
         for _ in 0..=REPAIRS {
-            let reply = self.model.complete(&turns).await?;
-            turns.push(Turn::new(Role::Assistant, reply.clone()));
-            let problem = match judge(&reply, harvest.output.schema.as_ref()) {
+            let reply = self
+                .model
+                .complete_for_task(&turns, self.usage.clone(), ModelRole::Output)
+                .await
+                .map_err(|error| error.message)?;
+            turns.push(Turn::new(Role::Assistant, reply.text.clone()));
+            let problem = match judge(&reply.text, harvest.output.schema.as_ref()) {
                 Ok(value) => return Ok(value),
                 Err(problem) => problem,
             };

@@ -23,6 +23,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use crate::{ModelRole, UsageRecorder};
 use serde_json::Value;
 use tinycomputer_bus::agent::{InputField, LanguageModelConfiguration, SurfaceKind, TaskPlan};
 use tinycomputer_bus::{FLOW_GUIDE, Flow};
@@ -30,11 +31,11 @@ use tinycomputer_core::is_sensitive_name;
 
 #[cfg(feature = "planner")]
 pub use config::{
-    ModelRoute, OPEN_ROUTER_BASE_URL, OUTPUT_MODEL, PLANNER_MODEL, PlannerConfig, RESCUE_MODEL,
-    TINYHUMANS_BASE_URL,
+    HostModelConfig, HostModels, ModelRoute, OPEN_ROUTER_BASE_URL, OUTPUT_MODEL, PLANNER_MODEL,
+    PlannerConfig, RESCUE_MODEL, TINYHUMANS_BASE_URL,
 };
 #[cfg(feature = "planner")]
-pub use hosted::{open_router, open_router_rescuer, open_router_shaper};
+pub use hosted::{open_router, open_router_rescuer, open_router_shaper, openai_compatible_models};
 
 /// Validation repairs a plan gets.
 pub const REPAIRS: usize = 2;
@@ -61,6 +62,39 @@ pub struct ModelUse {
     pub calls: u32,
     /// Bytes of text in the first call's turns.
     pub sent_bytes: usize,
+}
+
+/// Provider-reported measurements for one completed language-model call.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ReportedUsage {
+    /// Input tokens, when the provider reported them.
+    pub input_tokens: Option<u64>,
+    /// Cached input tokens, when the provider reported them.
+    pub cached_input_tokens: Option<u64>,
+    /// Output tokens, when the provider reported them.
+    pub output_tokens: Option<u64>,
+    /// USD charge in nanodollars, when the provider reported it.
+    pub cost_usd_nanos: Option<i64>,
+}
+
+/// A language-model reply and the measurements its provider supplied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelReply {
+    /// The assistant's text.
+    pub text: String,
+    /// Usage reported for this request, absent when the provider omitted it.
+    pub usage: ReportedUsage,
+    /// Provider requests used to obtain this reply, including retries.
+    pub attempts: u32,
+}
+
+/// A language-model failure with the number of provider requests attempted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelFailure {
+    /// Human-readable failure details.
+    pub message: String,
+    /// Provider requests made before the failure was returned.
+    pub attempts: u32,
 }
 
 impl ModelUse {
@@ -94,11 +128,77 @@ impl Turn {
 /// The future a [`LanguageModel`] returns: its reply text, or why it failed.
 pub type Completion = Pin<Box<dyn Future<Output = Result<String, String>> + Send>>;
 
+/// Future returned by [`LanguageModel::complete_reported`].
+pub type ReportedCompletion =
+    Pin<Box<dyn Future<Output = Result<ModelReply, ModelFailure>> + Send>>;
+
 /// A chat model that answers a conversation with text.
 pub trait LanguageModel: Send + Sync + 'static {
     /// The model's reply to `turns`, which it is asked to give as one JSON
     /// object.
     fn complete(&self, turns: &[Turn]) -> Completion;
+
+    /// A reply with provider-reported usage. Existing scripted models may
+    /// implement only [`LanguageModel::complete`]; their measurements remain
+    /// unknown.
+    fn complete_reported(&self, turns: &[Turn]) -> ReportedCompletion {
+        let completion = self.complete(turns);
+        Box::pin(async move {
+            completion.await.map_or_else(
+                |message| {
+                    Err(ModelFailure {
+                        message,
+                        attempts: 1,
+                    })
+                },
+                |text| {
+                    Ok(ModelReply {
+                        text,
+                        usage: ReportedUsage::default(),
+                        attempts: 1,
+                    })
+                },
+            )
+        })
+    }
+
+    /// Completes a task-role call while recording attempts and provider data.
+    fn complete_for_task(
+        &self,
+        turns: &[Turn],
+        usage: Option<Arc<UsageRecorder>>,
+        role: ModelRole,
+    ) -> ReportedCompletion {
+        let completion = self.complete_reported(turns);
+        Box::pin(async move {
+            if let Some(usage) = &usage {
+                usage.record_started(role);
+            }
+            let result = completion.await;
+            if let Some(usage) = &usage {
+                match &result {
+                    Ok(reply) => {
+                        usage.record_additional_calls(
+                            role,
+                            u64::from(reply.attempts.saturating_sub(1)),
+                        );
+                        usage.record_measurements(
+                            role,
+                            reply.usage.input_tokens,
+                            reply.usage.cached_input_tokens,
+                            reply.usage.output_tokens,
+                            reply.usage.cost_usd_nanos,
+                        );
+                    }
+                    Err(failure) => usage.record_additional_calls(
+                        role,
+                        u64::from(failure.attempts.saturating_sub(1)),
+                    ),
+                }
+            }
+            result
+        })
+    }
 }
 
 const PROTOCOL: &str = "You plan tasks for a module that drives web pages and desktop \
@@ -130,6 +230,7 @@ sending, deleting, publishing, or submitting with a stop_before step.";
 pub struct Planner {
     model: Arc<dyn LanguageModel>,
     configuration: Option<LanguageModelConfiguration>,
+    usage: Option<Arc<UsageRecorder>>,
 }
 
 impl std::fmt::Debug for Planner {
@@ -145,6 +246,7 @@ impl Planner {
         Self {
             model,
             configuration: None,
+            usage: None,
         }
     }
 
@@ -153,6 +255,13 @@ impl Planner {
     #[must_use]
     pub fn with_configuration(mut self, configuration: LanguageModelConfiguration) -> Self {
         self.configuration = Some(configuration);
+        self
+    }
+
+    /// This planner recording calls into a task-scoped collector.
+    #[must_use]
+    pub fn with_usage_recorder(mut self, usage: Arc<UsageRecorder>) -> Self {
+        self.usage = Some(usage);
         self
     }
 
@@ -188,6 +297,20 @@ impl Planner {
         fact_names: &[String],
         secret_names: &[String],
         surfaces: &[SurfaceKind],
+    ) -> (Result<TaskPlan, String>, ModelUse) {
+        self.plan_measured_with_budget(task, fact_names, secret_names, surfaces, None)
+            .await
+    }
+
+    /// Drafts a plan while reserving each provider call against `budget`
+    /// before the call starts.
+    pub async fn plan_measured_with_budget(
+        &self,
+        task: &str,
+        fact_names: &[String],
+        secret_names: &[String],
+        surfaces: &[SurfaceKind],
+        reserve_call: Option<&(dyn Fn() -> bool + Send + Sync)>,
     ) -> (Result<TaskPlan, String>, ModelUse) {
         let surfaces = if surfaces.is_empty() {
             "the web browser and desktop applications".to_owned()
@@ -240,10 +363,20 @@ impl Planner {
         let mut used = ModelUse::starting(&turns);
         let mut last = String::new();
         for _ in 0..=REPAIRS {
+            if reserve_call.is_some_and(|reserve| !reserve()) {
+                return (
+                    Err("the task model-call budget is exhausted".to_owned()),
+                    used,
+                );
+            }
             used.calls += 1;
-            let reply = match self.model.complete(&turns).await {
-                Ok(reply) => reply,
-                Err(error) => return (Err(error), used),
+            let reply = match self
+                .model
+                .complete_for_task(&turns, self.usage.clone(), ModelRole::Planner)
+                .await
+            {
+                Ok(reply) => reply.text,
+                Err(error) => return (Err(error.message), used),
             };
             turns.push(Turn::new(Role::Assistant, reply.clone()));
             let problem = match parse(&reply) {

@@ -85,6 +85,12 @@ impl<B: AgentBackend + Sync> FlowRun<'_, B> {
                     ));
                     return Ok(Move::Skipped);
                 }
+                // In a composer Return sends: a flow that stops before an
+                // irreversible step must press a control, which is gated.
+                if combo == "return" && !searching && !self.stop_before.is_empty() {
+                    self.history.push("refused return: this flow stops before an irreversible step, and Return may perform it; press the control instead".to_owned());
+                    return Ok(Move::Skipped);
+                }
                 let app = self.app.clone();
                 let reply = self
                     .act(log, &format!("press {combo}"), None, move |backend| {

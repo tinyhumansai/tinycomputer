@@ -17,10 +17,9 @@ pub(super) fn reply(command: &str, result: Result<Value>) -> DesktopResponse {
 /// name in `SCREAMING_SNAKE_CASE`, such as `STALE_REF`.
 /// Whether a click was refused because another element covers its target.
 pub(super) fn covered(reply: &DesktopResponse) -> bool {
-    reply
-        .error
-        .as_ref()
-        .is_some_and(|error| error.message.contains("is covered by"))
+    reply.error.as_ref().is_some_and(|error| {
+        error.code != "ACTION_REFUSED" && error.message.contains("is covered by")
+    })
 }
 
 pub(super) fn failure(command: &str, error: &Error) -> DesktopResponse {
@@ -49,3 +48,7 @@ pub(super) fn not_a_text_field() -> DesktopResponse {
         ),
     )
 }
+
+#[cfg(test)]
+#[path = "envelope_tests.rs"]
+mod tests;

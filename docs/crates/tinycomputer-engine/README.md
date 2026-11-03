@@ -7,7 +7,9 @@ crate, `tinycomputer-engine`, is that harness. It reads the screen, asks
 Jev what to do, checks the answer, acts, verifies the action landed, and
 enforces safety, and it keeps a task moving until it is done, blocked, or
 needs a person. If `tinycomputer-desktop` is the hand that clicks and
-types, this crate is the part that decides where the hand goes next.
+types, this crate is the part that decides where the hand goes next. The
+default `desktop` feature enables desktop entry points; embedding hosts can
+disable it and use `BrowserRunner` with `tinycomputer-browser` alone.
 
 It has no bus of its own. The `tinycomputer` crate wraps these functions as
 TinyBus members; this crate only holds the logic.
@@ -21,7 +23,7 @@ TinyBus members; this crate only holds the logic.
 | Run a bounded goal | `src/agentic/goal.rs` and `src/agentic/task/` (`run_goal`) | An observe-decide-act loop toward one visible end state, with a confirmation handle for anything hard to undo. |
 | The high-level flow runtime | `src/agentic/flow/` | Runs a whole flow (the plain-language step language), one step at a time. Documented separately: see [flow/README.md](flow/README.md). |
 | The debug journal | `src/agentic/journal/` | Every Jev exchange and how long each part of a run took, written to disk, opt-in and inert when off. |
-| The task controller | `src/task/` | Runs a flow in the background as a long-lived task, and reports it as a status a calling model can act on: needs input, needs approval, checkpoint, needs a person, done, or failed. |
+| The task controller | `src/task/` | `Tasks` runs a flow in the background and reports its status; `BrowserRunner` supplies one in-process browser session per task without TinyBus. |
 | The planner | `src/planner/` | Turns a plain-language task into a flow, using a language model that never touches the screen. |
 | The rescuer | `src/rescue/` | Consulted only when a task's step fails; suggests replacement steps or gives up. |
 | The shaper | `src/shape/` | Turns a finished task's saved records into the JSON its caller asked for, one reasoning-model pass. See [output.md](output.md). |

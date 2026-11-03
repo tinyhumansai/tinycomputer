@@ -130,11 +130,13 @@ impl<B: AgentBackend + Sync> FlowRun<'_, B> {
                 })
             });
             if self.tracing {
+                let mut answers = serde_json::to_value(&answers).unwrap_or_default();
+                super::secret::redact_value(&mut answers, &|text| self.redact_text(text));
                 self.trace.push(JevExchange {
                     step: self.step.clone(),
                     state: request.state.clone(),
                     questions: serde_json::to_value(&request.questions).unwrap_or_default(),
-                    answers: serde_json::to_value(&answers).unwrap_or_default(),
+                    answers,
                 });
             }
             if let Some((kind, _)) = ask::chosen(&answers, PAGE_KIND) {
@@ -236,17 +238,19 @@ impl<B: AgentBackend + Sync> FlowRun<'_, B> {
 
     /// Masks every secret out of a request, wherever it appears.
     fn mask(&self, request: &mut EvaluationRequest) {
-        if self.secrets.secret_names().is_empty() {
+        if self.secrets.secret_names().is_empty() && self.secret_host.is_none() {
             return;
         }
         mask_value(&mut request.state, &self.secrets);
         for question in request.questions.values_mut() {
             let mut value = serde_json::to_value(&*question).unwrap_or_default();
             mask_value(&mut value, &self.secrets);
+            super::secret::redact_value(&mut value, &|text| self.redact_text(text));
             if let Ok(masked) = serde_json::from_value(value) {
                 *question = masked;
             }
         }
+        super::secret::redact_value(&mut request.state, &|text| self.redact_text(text));
     }
 }
 

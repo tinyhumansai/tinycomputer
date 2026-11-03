@@ -135,7 +135,9 @@ const MOVES: &[(&str, &str)] = &[
 
 /// Standard macOS shortcuts that are safe to try: none sends, deletes, or
 /// quits. `confirm` (Return) commits text typed into a field; it is refused
-/// while a sheet or alert is showing, where Return presses the default button.
+/// while a sheet or alert is showing, where Return presses the default button,
+/// and outside a search box in a flow with a `stop_before`, where Return may
+/// send.
 pub(super) const SHORTCUTS: &[(&str, &str, &str)] = &[
     (
         "new_item",

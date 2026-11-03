@@ -8,11 +8,13 @@ use tinycomputer_bus::browser::{
 };
 
 use super::{Browser, Session};
+use crate::action_gate::{ActionRequest, ObservationKind};
 use crate::convert;
 use crate::deep;
 use crate::error::{Error, Result};
 use crate::outputs::within_cap;
 use crate::reply;
+use crate::{ActionObservation, ObservedAction, ObservedTarget};
 
 /// The fields of a raw command that can name a page to open or fetch.
 const URL_FIELDS: &[&str] = &["url", "url1", "url2"];
@@ -44,12 +46,20 @@ const URL_IS_NO_PAGE: &[&str] = &[
 /// text shows. So is a permission grant, which changes what pages may do.
 const NEITHER_ACTS_NOR_READS: &[&str] = &["url", "waitforloadstate"];
 
+fn raw_destination(command: &Value) -> Option<String> {
+    URL_FIELDS
+        .iter()
+        .find_map(|field| command.get(*field).and_then(Value::as_str))
+        .map(str::to_owned)
+}
+
 impl Browser {
     /// Navigates the session's active page.
     ///
     /// # Errors
     ///
     /// [`Error::NoSuchSession`], [`Error::InvalidInput`] for an empty URL,
+    /// [`Error::ActionRefused`] when the trusted host refuses it,
     /// [`Error::BlockedByPolicy`] outside the allowed origins (refused before
     /// the browser is asked, or after a redirect that leaves them), and
     /// whatever else the navigation reports.
@@ -57,6 +67,14 @@ impl Browser {
         let session = self.session(id)?;
         let mut session = session.lock().await;
         let command = convert::navigate(&request)?;
+        let current_url = session.action_url().await;
+        self.check_action(&ActionRequest::raw(
+            command.clone(),
+            current_url.clone(),
+            Some(request.url.clone()),
+            &session.action_context,
+            &session.refs,
+        ))?;
         if !session.origins.admits(&request.url) {
             return Err(Error::BlockedByPolicy { url: request.url });
         }
@@ -76,6 +94,16 @@ impl Browser {
         let page = session.admit(page).await?;
         session.info.url.clone_from(&page.url);
         session.info.title.clone_from(&page.title);
+        if let Some(before_url) = current_url {
+            self.observe_action(ActionObservation {
+                task_id: session.action_context.task_id.clone(),
+                session_id: session.info.id.to_string(),
+                action: ObservedAction::Navigate,
+                before_url,
+                after_url: page.url.clone(),
+                target: None,
+            });
+        }
         Ok(page)
     }
 
@@ -95,10 +123,24 @@ impl Browser {
         let session = self.session(id)?;
         let mut session = session.lock().await;
         session.check_if_readable(false).await?;
+        // The URL lookup above is an internal engine command and is not sent
+        // through the gate. Read the live address once more immediately before
+        // content is observed, without recursively gating that URL lookup.
+        let current_url = session.action_url().await;
+        self.check_action(&ActionRequest::observation(
+            ObservationKind::Snapshot,
+            current_url,
+            &session.action_context,
+        ))?;
         let data = session.run(convert::snapshot(&request)).await?;
         let controls = session.find_deep(request.selector.as_deref()).await;
         let page = session.page().await?;
         let page = session.admit(page).await?;
+        self.check_action(&ActionRequest::observation(
+            ObservationKind::Snapshot,
+            Some(page.url.clone()),
+            &session.action_context,
+        ))?;
         session.sequence += 1;
         let mut snapshot = reply::snapshot(
             &data,
@@ -113,6 +155,7 @@ impl Browser {
             &controls,
             request.max_chars,
         );
+        session.refs.clone_from(&snapshot.refs);
         Ok(snapshot)
     }
 
@@ -149,14 +192,45 @@ impl Browser {
             // The page may have moved on its own since the last call: an
             // action is never sent to a refused one.
             session.check_if_readable(false).await?;
+            let current_url = session.action_url().await;
+            let request = ActionRequest::typed(
+                &action,
+                current_url.clone(),
+                None,
+                &session.action_context,
+                &session.refs,
+            );
+            let target = observed_target(request.target.as_ref(), &session.refs);
+            self.check_action(&request)?;
             let value = session.act_deep(number, &action).await?;
-            return session.outcome(value, None).await;
+            let outcome = session.outcome(value, None).await?;
+            if let Some(before_url) = current_url {
+                self.observe_action(ActionObservation {
+                    task_id: session.action_context.task_id.clone(),
+                    session_id: session.info.id.to_string(),
+                    action: observed_action(&action),
+                    before_url,
+                    after_url: outcome.page.url.clone(),
+                    target,
+                });
+            }
+            return Ok(outcome);
         }
         let command = convert::action(&action, session.options.default_timeout_ms)?;
         let keys = keys_go_to(&action)?;
         // The page may have moved on its own since the last call (a redirect,
         // a timer): an action is never sent to a refused one.
         session.check_if_readable(false).await?;
+        let current_url = session.action_url().await;
+        let request = ActionRequest::typed(
+            &action,
+            current_url.clone(),
+            None,
+            &session.action_context,
+            &session.refs,
+        );
+        let target = observed_target(request.target.as_ref(), &session.refs);
+        self.check_action(&request)?;
         match keys {
             Keys::Checked(selector) => session.focus_only(&selector).await?,
             Keys::Blurred => session.blur().await?,
@@ -180,7 +254,60 @@ impl Browser {
             } => Some(format!("{:?} {:?}", value.by, value.value)),
             _ => None,
         };
-        session.outcome(value, matched).await
+        let outcome = session.outcome(value, matched).await?;
+        if let Some(before_url) = current_url {
+            self.observe_action(ActionObservation {
+                task_id: session.action_context.task_id.clone(),
+                session_id: session.info.id.to_string(),
+                action: observed_action(&action),
+                before_url,
+                after_url: outcome.page.url.clone(),
+                target,
+            });
+        }
+        Ok(outcome)
+    }
+
+    /// Checks the configured action gate for a host-owned secret fill without
+    /// sending any text to the page.
+    ///
+    /// # Errors
+    ///
+    /// Returns the browser/session error or the action gate's refusal. The
+    /// current URL must be readable before a host secret can be typed.
+    pub async fn authorize_secret_type(
+        &self,
+        id: &SessionId,
+        role: &str,
+        name: Option<&str>,
+        reference: &str,
+    ) -> Result<String> {
+        let session = self.session(id)?;
+        let mut session = session.lock().await;
+        session.check_if_readable(false).await?;
+        let current_url = session
+            .action_url()
+            .await
+            .ok_or_else(|| Error::invalid_input("the current page URL is unknown"))?;
+        let reference = reference.strip_prefix('@').unwrap_or(reference);
+        self.check_action(&ActionRequest {
+            payload: serde_json::json!({
+                "action": "fill",
+                "selector": format!("@{reference}"),
+                "value": "[host secret]",
+            }),
+            target: Some(crate::action_gate::ActionTarget {
+                role: Some(role.to_owned()),
+                name: name.map(str::to_owned),
+                reference: Some(reference.to_owned()),
+                unique: false,
+            }),
+            current_url: Some(current_url.clone()),
+            destination_url: None,
+            observation: None,
+            context: session.action_context.clone(),
+        })?;
+        Ok(current_url)
     }
 
     /// Extracts the active page as text, markdown, or HTML.
@@ -192,6 +319,12 @@ impl Browser {
         let session = self.session(id)?;
         let mut session = session.lock().await;
         session.check_if_readable(false).await?;
+        let current_url = session.action_url().await;
+        self.check_action(&ActionRequest::observation(
+            ObservationKind::ReadPage,
+            current_url,
+            &session.action_context,
+        ))?;
         let data = session.run(convert::read(&request)).await?;
         let content = ["content", "text", "html"]
             .into_iter()
@@ -202,6 +335,11 @@ impl Browser {
         let content = content.chars().take(request.max_chars).collect();
         let page = session.page().await?;
         let page = session.admit(page).await?;
+        self.check_action(&ActionRequest::observation(
+            ObservationKind::ReadPage,
+            Some(page.url.clone()),
+            &session.action_context,
+        ))?;
         Ok(PageText {
             url: page.url,
             title: page.title,
@@ -219,18 +357,19 @@ impl Browser {
     /// `{"action": "inputvalue", "selector": "@e3"}`, and returns its `data`.
     ///
     /// This is the escape hatch for engine capabilities the typed calls do
-    /// not cover. It carries no policy of its own beyond the allowed origins:
+    /// not cover. The trusted host's [`ActionGate`](crate::ActionGate) is
+    /// consulted before the raw command is sent:
     /// a command that would open or fetch an address outside them is never
     /// sent, nor any command that acts on the page or reads what it shows
     /// while the session shows a refused page (only a wait for the page to
     /// load and a read of its address go ahead), and the page a command
     /// leaves the session on is checked before its result is returned. A
-    /// caller exposing it to a model must still decide which actions to
-    /// allow.
+    /// A host that does not install a gate allows everything by default.
     ///
     /// # Errors
     ///
-    /// [`Error::NoSuchSession`], [`Error::InvalidInput`] when `command` names
+    /// [`Error::NoSuchSession`], [`Error::ActionRefused`] when the trusted
+    /// host refuses it, [`Error::InvalidInput`] when `command` names
     /// no `action`, [`Error::BlockedByPolicy`] for a page the allowed origins
     /// refuse, and whatever the engine reports.
     pub async fn command(&self, id: &SessionId, command: Value) -> Result<Value> {
@@ -243,6 +382,14 @@ impl Browser {
         };
         let session = self.session(id)?;
         let mut session = session.lock().await;
+        let current_url = session.action_url().await;
+        self.check_action(&ActionRequest::raw(
+            command.clone(),
+            current_url,
+            raw_destination(&command),
+            &session.action_context,
+            &session.refs,
+        ))?;
         if !URL_IS_NO_PAGE.contains(&action) {
             for field in URL_FIELDS {
                 if let Some(url) = command.get(*field).and_then(Value::as_str)
@@ -279,11 +426,105 @@ impl Browser {
         Ok(data)
     }
 
+    /// Runs the browser surface's fixed-purpose stability watcher. This is
+    /// crate-private so callers cannot label arbitrary evaluation as an
+    /// observation or bypass the host action gate.
+    pub(crate) async fn observe_page_stability(
+        &self,
+        id: &SessionId,
+        script: String,
+    ) -> Result<Value> {
+        let session = self.session(id)?;
+        let mut session = session.lock().await;
+        session.check_if_readable(false).await?;
+        let current_url = session
+            .action_url()
+            .await
+            .ok_or_else(|| Error::invalid_input("the current page URL is unknown"))?;
+        self.check_action(&ActionRequest::observation(
+            ObservationKind::PageStability,
+            Some(current_url),
+            &session.action_context,
+        ))?;
+        let data = session
+            .run(serde_json::json!({"action": "evaluate", "script": script}))
+            .await?;
+        let page = session.page().await?;
+        let page = session.admit(page).await?;
+        self.check_action(&ActionRequest::observation(
+            ObservationKind::PageStability,
+            Some(page.url.clone()),
+            &session.action_context,
+        ))?;
+        session.info.url.clone_from(&page.url);
+        Ok(data)
+    }
+
+    /// Runs the browser surface's fixed-purpose cover hit-test. This stays
+    /// crate-private so arbitrary evaluations cannot claim observation status.
+    pub(crate) async fn observe_target_check(
+        &self,
+        id: &SessionId,
+        script: String,
+    ) -> Result<Value> {
+        let session = self.session(id)?;
+        let mut session = session.lock().await;
+        session.check_if_readable(false).await?;
+        let current_url = session
+            .action_url()
+            .await
+            .ok_or_else(|| Error::invalid_input("the current page URL is unknown"))?;
+        self.check_action(&ActionRequest::observation(
+            ObservationKind::TargetCheck,
+            Some(current_url),
+            &session.action_context,
+        ))?;
+        let data = session
+            .run(serde_json::json!({"action": "evaluate", "script": script}))
+            .await?;
+        let page = session.page().await?;
+        let page = session.admit(page).await?;
+        self.check_action(&ActionRequest::observation(
+            ObservationKind::TargetCheck,
+            Some(page.url.clone()),
+            &session.action_context,
+        ))?;
+        session.info.url.clone_from(&page.url);
+        Ok(data)
+    }
+
+    /// Runs the browser surface's Sight snapshot script. This is crate-private
+    /// so raw evaluations cannot claim Snapshot observation authority.
+    pub(crate) async fn observe_sight(&self, id: &SessionId, script: String) -> Result<Value> {
+        let session = self.session(id)?;
+        let mut session = session.lock().await;
+        session.check_if_readable(false).await?;
+        let current_url = session.action_url().await;
+        self.check_action(&ActionRequest::observation(
+            ObservationKind::Snapshot,
+            current_url,
+            &session.action_context,
+        ))?;
+        let data = session
+            .run(serde_json::json!({"action": "evaluate", "script": script}))
+            .await?;
+        let page = session.page().await?;
+        let page = session.admit(page).await?;
+        self.check_action(&ActionRequest::observation(
+            ObservationKind::Snapshot,
+            Some(page.url.clone()),
+            &session.action_context,
+        ))?;
+        session.info.url.clone_from(&page.url);
+        Ok(data)
+    }
+
     /// Evaluates JavaScript in the page and returns its value.
     ///
     /// # Errors
     ///
-    /// [`Error::NoSuchSession`], [`Error::InvalidInput`] for an empty
+    /// [`Error::NoSuchSession`], [`Error::ActionRefused`] when the trusted
+    /// host refuses it, [`Error::InvalidInput`] for an empty
     /// expression, [`Error::BlockedByPolicy`] when the page it would run in,
     /// or the page it leads to, is outside the allowed origins, and
     /// [`Error::PageError`] when the script throws.
@@ -292,6 +533,14 @@ impl Browser {
         let mut session = session.lock().await;
         let command = convert::evaluate(&request)?;
         session.check_if_readable(false).await?;
+        let current_url = session.action_url().await;
+        self.check_action(&ActionRequest::raw(
+            command.clone(),
+            current_url,
+            None,
+            &session.action_context,
+            &session.refs,
+        ))?;
         let data = session.run(command).await?;
         session.check_if_readable(true).await?;
         Ok(data.get("result").cloned().unwrap_or(Value::Null))
@@ -321,6 +570,12 @@ impl Browser {
         let path = session.scratch_file("shot", self.next(), extension)?;
         let command = convert::screenshot(&request, &path)?;
         session.check_if_readable(false).await?;
+        let current_url = session.action_url().await;
+        self.check_action(&ActionRequest::observation(
+            ObservationKind::Screenshot,
+            current_url,
+            &session.action_context,
+        ))?;
         let data = session.run(command).await?;
         let written = data
             .get("path")
@@ -331,10 +586,66 @@ impl Browser {
         let _removed = std::fs::remove_file(&written);
         // A picture of a page that turned out refused is never handed over.
         session.check_if_readable(true).await?;
+        let current_url = session.action_url().await;
+        self.check_action(&ActionRequest::observation(
+            ObservationKind::Screenshot,
+            current_url,
+            &session.action_context,
+        ))?;
         within_cap(bytes.len().div_ceil(3) * 4)?;
         let (width, height) = reply::image_size(&bytes);
         self.lock_outputs()?
             .insert(bytes, request.format.media_type(), width, height)
+    }
+}
+
+fn observed_target(
+    target: Option<&crate::action_gate::ActionTarget>,
+    refs: &[tinycomputer_bus::browser::ElementRef],
+) -> Option<ObservedTarget> {
+    let target = target?;
+    let name = target.name.clone();
+    let reference = target.reference.clone();
+    let matches = refs
+        .iter()
+        .filter(|item| Some(item.role.as_str()) == target.role.as_deref())
+        .filter(|item| Some(item.name.as_str()) == target.name.as_deref())
+        .collect::<Vec<_>>();
+    let unique = target
+        .name
+        .as_deref()
+        .is_some_and(|name| !name.trim().is_empty())
+        && matches.len() == 1
+        && reference.as_deref() == Some(matches[0].id.as_str());
+    Some(ObservedTarget {
+        role: target.role.clone()?,
+        name,
+        reference,
+        unique,
+    })
+}
+
+fn observed_action(action: &Action) -> ObservedAction {
+    match action {
+        Action::Click { .. } => ObservedAction::Click,
+        Action::Fill { .. } => ObservedAction::Fill,
+        Action::Type { .. } => ObservedAction::Type,
+        Action::Select { .. } => ObservedAction::Select,
+        Action::Check { checked: true, .. } => ObservedAction::Check,
+        Action::Check { checked: false, .. } => ObservedAction::Uncheck,
+        Action::DoubleClick { .. } => ObservedAction::DoubleClick,
+        Action::Hover { .. } => ObservedAction::Hover,
+        Action::Focus { .. } => ObservedAction::Focus,
+        Action::Scroll { .. } => ObservedAction::Scroll,
+        Action::GetText { .. } | Action::GetAttribute { .. } | Action::IsVisible { .. } => {
+            ObservedAction::Read
+        }
+        Action::WaitFor { .. } => ObservedAction::Wait,
+        Action::Press { key, .. } if key.eq_ignore_ascii_case("escape") => {
+            ObservedAction::PressEscape
+        }
+        Action::Press { .. } => ObservedAction::Press,
+        Action::Back | Action::Forward | Action::Reload => ObservedAction::Other,
     }
 }
 

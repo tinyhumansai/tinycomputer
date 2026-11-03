@@ -16,7 +16,7 @@ use tinycomputer_bus::{
 use tinycomputer_core::Facts;
 
 use super::{
-    Ended, FlowRun, Halt, MAX_ACTIONS, MAX_CALLS, StepLog,
+    Ended, FlowRun, Halt, MAX_ACTIONS, MAX_CALLS, MAX_DO_TURNS, StepLog,
     backend::AgentBackend,
     front::Front,
     ledger, steps,
@@ -49,7 +49,12 @@ fn collect_stop_before(steps: &[FlowStep], phrases: &mut Vec<String>) {
 }
 
 impl<'r, B: AgentBackend + Sync> FlowRun<'r, B> {
-    pub(super) fn new(backend: B, runtime: &'r JevRuntime, request: &RunFlowRequest) -> Self {
+    pub(super) fn new(
+        backend: B,
+        runtime: &'r JevRuntime,
+        request: &RunFlowRequest,
+        secret_host: Option<std::sync::Arc<dyn crate::SecretHost>>,
+    ) -> Self {
         // A flow's own definitions may name the caller's values
         // (`"first_name": "${first name}"`), so they are expanded once
         // against them. The caller's values are never rescanned: one that
@@ -101,7 +106,13 @@ impl<'r, B: AgentBackend + Sync> FlowRun<'r, B> {
             so_far: Vec::new(),
             page: None,
             votes: request.votes.clamp(1, vote::MAX_VOTES),
+            do_turns: request
+                .max_do_turns
+                .map_or(steps::DO_TURNS, |turns| turns.clamp(1, MAX_DO_TURNS)),
             secrets,
+            fact_handles: request.fact_handles.clone(),
+            secret_host,
+            task_id: request.task_id.clone(),
             allow_destructive: request.allow_destructive,
             include_values: request.include_values,
             max_actions: request.max_actions.min(MAX_ACTIONS),
@@ -204,8 +215,8 @@ impl<'r, B: AgentBackend + Sync> FlowRun<'r, B> {
             }
             Err(error @ Halt::Error(_)) => return Err(error),
         };
-        let text = self.secrets.mask(&text);
-        let ended = Ended::new(ended.outcome, self.secrets.mask(&ended.note));
+        let text = self.redact_text(&text);
+        let ended = Ended::new(ended.outcome, self.redact_text(&ended.note));
         self.step.clone_from(&path);
         self.runtime.journal.record("step", || {
             json!({

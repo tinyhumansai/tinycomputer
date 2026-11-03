@@ -34,6 +34,7 @@
         "max_model_calls": {"type": "integer"},
         "max_elapsed_ms": {"type": "integer"},
         "votes": {"type": "integer", "description": "How many ways each decision is asked before its answers are averaged."},
+        "max_do_turns": {"type": "integer", "minimum": 1, "maximum": 32, "description": "How many turns each do step may spend before it fails as not accomplished (default 8, at most 32)."},
         "strategy": {"type": "string", "enum": ["narrow", "wide"], "description": "How each decision is asked: many small requests (narrow, the default), or one request per turn over a digest of the screen with a working memory (wide)."},
         "deliberation": {"type": "string", "enum": ["off", "standard", "deep"], "description": "How much each decision is deliberated before acting: deep (the default) escalates close calls with more framings, pairwise duels, and contrasting questions, checks every action's effect, and undoes and retries mistakes; standard does less; off uses single thresholds."},
         "max_rescues": {"type": "integer", "minimum": 0, "maximum": 5, "description": "How many failed steps a reasoning model may rescue with guidance before the task fails (default and most 5; 0 turns rescues off). Needs the module's planner configuration."}

@@ -6,32 +6,6 @@ the engine adapter (`EgressAuthorizer`) small: the host authorizes the parsed
 destination, returns a one-use grant and exact socket addresses, consumes a
 grant before each dial, and revalidates active leases.
 
-Host integration tests can enable the `test-connector` feature and provide
-`EgressProxy::bind_with_test_connector` (or the corresponding
-`EnforcedAgentBrowser` builder) to replace only the final TCP operation. The
-connector receives the exact approved socket after grant consumption. The
-TinyComputer module exposes a stricter module-config mapping for dynamic test
-artifacts; it accepts one `8.8.8.8:port` to loopback `127.0.0.1:port` mapping
-and denies all other sockets. Production builds do not parse that test-only
-field. In a `test-connector` build, a host fixture supplies it at
-`browser.egress.test_connector_map` as
-`{"approved":"8.8.8.8:<port>","fixture":"127.0.0.1:<same-port>"}`.
-
-The loaded-module Chromium test is opt-in and is not part of hosted CI, whose
-module-e2e lane packages and verifies the artifact without launching Chromium.
-With Chromium installed, run the focused test locally with:
-
-```sh
-TINYCOMPUTER_LIVE_BROWSER_EGRESS_TESTS=1 cargo test -p tinycomputer \
-  --features static-link,test-connector \
-  browser_egress_live_tests::public_connector_tests::loaded_module_consumes_public_socket_before_fixture_mapping \
-  -- --nocapture
-```
-
-It uses a local HTTP listener and the TinyComputer fixture callback host; the
-host's real TinySecurity policy composition is covered by the separate
-OpenHuman fixture.
-
 ## Structure
 
 - `mod.rs` defines the public `BrowserDialTarget`, `DialGrant`,

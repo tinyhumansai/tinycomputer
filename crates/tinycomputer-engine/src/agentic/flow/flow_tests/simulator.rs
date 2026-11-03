@@ -14,6 +14,8 @@ pub(super) enum Quirk {
     Frozen,
     /// Observation fails.
     FailObserve,
+    /// The surface cannot report a trustworthy current URL.
+    NoURL,
     /// Launching fails.
     FailLaunch,
     /// The surface has no addresses, as a desktop application has none.
@@ -31,6 +33,8 @@ pub(super) enum Quirk {
     /// The shop's history is stuck: going back or loading an address
     /// reports success and changes nothing.
     StuckHistory,
+    /// A test page echoes the host secret in several accessibility fields.
+    HostSecretEcho,
     /// The Archive button shows disabled.
     DisabledArchive,
     /// A promo toast with a Close button sits over the page until closed.
@@ -193,6 +197,72 @@ pub(super) fn node(name: &str, role: &str, actions: &[&str], path: &[&str], y: f
     }
 }
 
+fn echo_secret(candidate: &mut Candidate) {
+    candidate.description = Some("4111 1111 1111 1111".to_owned());
+    candidate.states = vec!["4111 1111 1111 1111".to_owned()];
+    candidate.children.push(Candidate {
+        ref_id: "echo-child".to_owned(),
+        name: Some("4111 1111 1111 1111".to_owned()),
+        path: vec!["4111 1111 1111 1111".to_owned()],
+        ..Candidate::default()
+    });
+}
+
+fn base_mail_candidates(sim: &Sim, root: &str) -> Vec<Candidate> {
+    let mut candidates = Vec::new();
+    if sim.compose_open {
+        for (index, field) in ["To", "Subject"].iter().enumerate() {
+            let mut field_node = node(
+                field,
+                "textfield",
+                &["SetValue"],
+                &[root, "group \"Header\""],
+                100.0 + 30.0 * f64::from(u8::try_from(index).unwrap()),
+            );
+            field_node.value = sim.fields.get(*field).map(|value| json!(value));
+            if *field == "To" && sim.has(Quirk::HostSecretEcho) {
+                echo_secret(&mut field_node);
+            }
+            candidates.push(field_node);
+        }
+        let mut body = node("Body", "textarea", &["SetValue"], &[root], 300.0);
+        body.value = sim.fields.get("Body").map(|value| json!(value));
+        candidates.push(body);
+        candidates.push(node("Send", "button", &["Click"], &[root, "toolbar"], 40.0));
+    } else {
+        checked_fare(sim, root, &mut candidates);
+        candidates.push(node(
+            "New Message",
+            "button",
+            &["Click"],
+            &[root, "toolbar"],
+            40.0,
+        ));
+        search_behind_link(sim, root, &mut candidates);
+        let mut archive = node("Archive", "button", &["Click"], &[root, "toolbar"], 40.0);
+        if sim.has(Quirk::DisabledArchive) {
+            archive.states = vec!["disabled".to_owned()];
+        }
+        candidates.push(archive);
+        for index in 0..sim.extra_buttons {
+            let region = if sim.has(Quirk::OneRegion) {
+                "list \"Messages\"".to_owned()
+            } else {
+                format!("list \"Region {}\"", index % 3)
+            };
+            let name = format!("Message {index}");
+            candidates.push(node(
+                &name,
+                "row",
+                &["Click"],
+                &[root, &region],
+                60.0 + f64::from(u32::try_from(index).unwrap()),
+            ));
+        }
+    }
+    candidates
+}
+
 impl App {
     pub(super) fn screen(&self) -> Screen {
         let sim = self.sim();
@@ -205,60 +275,7 @@ impl App {
             "Inbox"
         };
         let root = format!("window {window:?}");
-        let mut candidates = Vec::new();
-        if sim.compose_open {
-            for (index, field) in ["To", "Subject"].iter().enumerate() {
-                let mut field_node = node(
-                    field,
-                    "textfield",
-                    &["SetValue"],
-                    &[&root, "group \"Header\""],
-                    100.0 + 30.0 * f64::from(u8::try_from(index).unwrap()),
-                );
-                field_node.value = sim.fields.get(*field).map(|value| json!(value));
-                candidates.push(field_node);
-            }
-            let mut body = node("Body", "textarea", &["SetValue"], &[&root], 300.0);
-            body.value = sim.fields.get("Body").map(|value| json!(value));
-            candidates.push(body);
-            candidates.push(node(
-                "Send",
-                "button",
-                &["Click"],
-                &[&root, "toolbar"],
-                40.0,
-            ));
-        } else {
-            checked_fare(&sim, &root, &mut candidates);
-            candidates.push(node(
-                "New Message",
-                "button",
-                &["Click"],
-                &[&root, "toolbar"],
-                40.0,
-            ));
-            search_behind_link(&sim, &root, &mut candidates);
-            let mut archive = node("Archive", "button", &["Click"], &[&root, "toolbar"], 40.0);
-            if sim.has(Quirk::DisabledArchive) {
-                archive.states = vec!["disabled".to_owned()];
-            }
-            candidates.push(archive);
-            for index in 0..sim.extra_buttons {
-                let region = if sim.has(Quirk::OneRegion) {
-                    "list \"Messages\"".to_owned()
-                } else {
-                    format!("list \"Region {}\"", index % 3)
-                };
-                let name = format!("Message {index}");
-                candidates.push(node(
-                    &name,
-                    "row",
-                    &["Click"],
-                    &[&root, &region],
-                    60.0 + f64::from(u32::try_from(index).unwrap()),
-                ));
-            }
-        }
+        let mut candidates = base_mail_candidates(&sim, &root);
         if let Some(booking) = &sim.booking {
             booking_widget(&sim, booking, &root, &mut candidates);
         }
@@ -277,6 +294,9 @@ impl App {
         overlays(&sim, &root, &mut candidates);
         let mut text_nodes = result_cards(&sim, &root, &mut candidates);
         text_nodes.extend(heading_node(&sim, &root));
+        if sim.has(Quirk::HostSecretEcho) {
+            text_nodes.push(secret_text_node());
+        }
         let surface = surface_of(&sim);
         if sim.obstacle {
             obstacle_sheet(&sim, &mut candidates);
@@ -293,6 +313,13 @@ impl App {
             unexplored: Vec::new(),
             text_nodes,
         }
+    }
+}
+
+fn secret_text_node() -> Candidate {
+    Candidate {
+        value: Some(json!("4111 1111 1111 1111")),
+        ..Candidate::default()
     }
 }
 
@@ -630,6 +657,12 @@ impl AgentBackend for App {
             sim.pages.truncate(at + 1);
         }
         DesktopResponse::ok("navigate", json!({"url": url, "title": "Flights"}))
+    }
+
+    fn authorize_secret_type(&self, _target: &Candidate) -> Result<String, String> {
+        (!self.sim().has(Quirk::NoURL))
+            .then(|| "https://shop.test/pay".to_owned())
+            .ok_or_else(|| "the current page URL is unknown".to_owned())
     }
 }
 

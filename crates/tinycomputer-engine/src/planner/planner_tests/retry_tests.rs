@@ -6,10 +6,31 @@ use std::cell::Cell;
 use tinyinference_llm::Error;
 use tinyinference_llm::model::ProviderError;
 
-use super::super::hosted::{passing, with_retries};
+use super::super::ReportedUsage;
+use super::super::hosted::{passing, reported_usage, with_retries, with_retries_observed};
+use tinyinference_llm::usage::Usage;
 
 fn bad_gateway() -> Error {
     Error::Model("tinyhumans returned HTTP 502: error code: 502".to_owned())
+}
+
+#[test]
+fn absent_provider_counts_stay_unknown_instead_of_becoming_zero() {
+    assert_eq!(reported_usage(None), ReportedUsage::default());
+    assert_eq!(
+        reported_usage(Some(&Usage {
+            input_tokens: 10,
+            output_tokens: 2,
+            charged_amount_nanos: Some(0),
+            ..Usage::default()
+        })),
+        ReportedUsage {
+            input_tokens: Some(10),
+            cached_input_tokens: None,
+            output_tokens: Some(2),
+            cost_usd_nanos: Some(0),
+        }
+    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -36,6 +57,30 @@ async fn a_model_call_is_tried_again_after_a_gateway_error() {
         std::time::Duration::from_secs(3),
         "1 s, then 2 s apart"
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn retry_observer_counts_each_provider_request() {
+    let tries = Cell::new(0);
+    let recorded = Cell::new(0);
+    let (answer, attempts) = with_retries_observed(
+        || {
+            tries.set(tries.get() + 1);
+            let failing = tries.get() < 3;
+            async move {
+                if failing {
+                    Err(bad_gateway())
+                } else {
+                    Ok("the answer")
+                }
+            }
+        },
+        || recorded.set(recorded.get() + 1),
+    )
+    .await;
+    assert_eq!(answer.unwrap(), "the answer");
+    assert_eq!(attempts, 3);
+    assert_eq!(recorded.get(), 3);
 }
 
 #[tokio::test(start_paused = true)]

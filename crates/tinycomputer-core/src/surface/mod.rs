@@ -51,6 +51,19 @@ pub trait Surface: Clone + Send + 'static {
         text: Option<String>,
     ) -> DesktopResponse;
 
+    /// Consults the surface's action policy before a host types a secret into
+    /// `target`. Browser surfaces consult their configured gate with metadata
+    /// and no secret value. Other surfaces
+    /// refuse unless they implement an equivalent policy check.
+    ///
+    /// # Errors
+    ///
+    /// Returns a safe refusal reason when the surface cannot authorize the
+    /// host-side type or does not know the current page URL.
+    fn authorize_secret_type(&self, _target: &Candidate) -> Result<String, String> {
+        Err("this surface does not support host-side secret typing".to_owned())
+    }
+
     /// Reads an element's current value, when the platform exposes one.
     fn read_value(&self, target: &Candidate) -> Option<String>;
 

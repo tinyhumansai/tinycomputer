@@ -1,8 +1,12 @@
 # Tasks
 
-`Tasks`, in `crates/tinycomputer-engine/src/task/controller.rs`, is the controller
-behind the Agent interface: the thing most callers should actually use
-instead of `RunGoal` or `ResolveIntent` directly. Give it a flow (or a
+`Tasks`, in `crates/tinycomputer-engine/src/task/controller.rs`, is the public
+controller behind the Agent interface: the thing most callers should actually
+use instead of `RunGoal` or `ResolveIntent` directly. An embedding host can
+construct it with `Tasks::new(Arc::new(BrowserRunner::new(browser, runtime)))`
+and call the same start, await, continue, cancel, and report methods the module
+serves over TinyBus. `BrowserRunner` keeps one in-process browser session per
+task and requires no desktop adapter. Give it a flow (or a
 plain-language task, with a planner configured) and it runs that flow in the
 background, reporting back a status a calling model can act on: still
 running, needs a value, needs approval, reached a checkpoint, needs a

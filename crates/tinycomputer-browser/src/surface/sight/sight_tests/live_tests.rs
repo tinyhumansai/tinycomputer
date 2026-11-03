@@ -5,7 +5,7 @@
 use serde_json::json;
 
 #[cfg(feature = "agent-browser")]
-use crate::surface::sight::script;
+use crate::surface::sight::{script, script_without_form_values};
 
 /// Reads `html` by sight in a real browser: `None` unless
 /// `TINYCOMPUTER_LIVE_BROWSER=1`, since CI has no browser to launch. The
@@ -163,6 +163,35 @@ async fn live_ad_iframes_and_sponsored_blocks_are_removed() {
         json!({"ads": 9, "empty": 0, "hidden": 0}),
         "{names:?}"
     );
+}
+
+#[cfg(feature = "agent-browser")]
+#[tokio::test]
+async fn live_private_sight_omits_editable_descendant_content() {
+    const UNKNOWN: &str = "profile-autofill-unknown-7Qz9";
+    let html = format!(
+        r#"<main>
+          <div contenteditable="true" aria-label="Message">
+            <span>{UNKNOWN}</span>
+            <button aria-label="{UNKNOWN} action">Send</button>
+          </div>
+          <p>Order total is $12.50</p>
+        </main>"#
+    );
+    let Some(mut readings) =
+        live_results(&html, &[script_without_form_values(None), script(None)]).await
+    else {
+        return;
+    };
+    let private = readings.remove(0);
+    let public = readings.remove(0);
+    let private_text = private.to_string();
+    let public_text = public.to_string();
+
+    assert!(!private_text.contains(UNKNOWN));
+    assert!(private_text.contains("Message"));
+    assert!(private_text.contains("Order total is $12.50"));
+    assert!(public_text.contains(UNKNOWN));
 }
 
 #[cfg(feature = "agent-browser")]

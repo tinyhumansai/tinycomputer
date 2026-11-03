@@ -38,7 +38,9 @@
 
 mod artifact;
 mod brief;
+mod browser;
 mod budget;
+mod cancel;
 mod controller;
 mod describe;
 mod drive;
@@ -47,9 +49,12 @@ mod human;
 mod interpret;
 mod names;
 mod page;
+mod persistence;
+mod plan_recovery;
 mod publish;
 mod recovery;
 mod resume;
+mod secret_host;
 mod store;
 mod timing;
 
@@ -58,17 +63,79 @@ use std::pin::Pin;
 
 use tinycomputer_bus::agent::{TaskConstraints, TaskId};
 use tinycomputer_bus::browser::OutputRef;
-use tinycomputer_bus::{DesktopResponse, RunFlowRequest};
+use tinycomputer_bus::{DesktopResponse, Flow, RunFlowRequest};
 
-pub use controller::Tasks;
+/// Sanitizes every textual representation in a JSON report or model payload
+/// through the task runner's host secret filter.
+pub(super) fn redact_task_value(
+    runner: &dyn FlowRunner,
+    task: &TaskId,
+    value: &mut serde_json::Value,
+) {
+    redact_value(value, &|text| runner.redact(task, text));
+}
+
+/// Serializes, sanitizes and rebuilds a task model payload or report. Returns
+/// `None` when the redacted representation no longer fits its declared type.
+pub(super) fn redact_task_data<T>(runner: &dyn FlowRunner, task: &TaskId, data: T) -> Option<T>
+where
+    T: serde::Serialize + serde::de::DeserializeOwned,
+{
+    let mut value = serde_json::to_value(data).ok()?;
+    redact_task_value(runner, task, &mut value);
+    serde_json::from_value(value).ok()
+}
+
+fn redact_value(value: &mut serde_json::Value, redact: &impl Fn(&str) -> String) {
+    match value {
+        serde_json::Value::String(text) => *text = redact(text),
+        serde_json::Value::Number(number) => {
+            let text = number.to_string();
+            let masked = redact(&text);
+            if masked != text {
+                *value = serde_json::Value::String(masked);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                redact_value(item, redact);
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            let mut safe_fields = serde_json::Map::new();
+            for (key, mut item) in std::mem::take(fields) {
+                redact_value(&mut item, redact);
+                let base = redact(&key);
+                let mut safe_key = base.clone();
+                let mut suffix = 2_u32;
+                while safe_fields.contains_key(&safe_key) {
+                    safe_key = format!("{base}#{suffix}");
+                    suffix = suffix.saturating_add(1);
+                }
+                safe_fields.insert(safe_key, item);
+            }
+            *fields = safe_fields;
+        }
+        _ => {}
+    }
+}
+
+pub use browser::BrowserRunner;
+pub use budget::{HostWorkGuard, TaskBudgetScope, TaskCallBudget};
+pub use controller::{ContinuePaidAtShopRequest, ContinuePaymentRequest, Tasks};
 pub use describe::capabilities;
 pub(crate) use names::input_kind;
+pub use persistence::PausedTaskError;
+pub use secret_host::{SecretHost, SecretTypeRequest};
 
 /// The future a [`FlowRunner`] returns: the flow runtime's reply envelope.
 pub type FlowFuture = Pin<Box<dyn Future<Output = DesktopResponse> + Send>>;
 
 /// The future [`FlowRunner::visible_text`] returns.
 pub type TextFuture = Pin<Box<dyn Future<Output = Vec<String>> + Send>>;
+
+/// The HTTPS origin of the browser page a running task currently holds.
+pub type PageOriginFuture = Pin<Box<dyn Future<Output = Option<String>> + Send>>;
 
 /// The future [`FlowRunner::capture`] returns: a held screenshot, if the
 /// task's surface could take one.
@@ -77,6 +144,85 @@ pub type CaptureFuture = Pin<Box<dyn Future<Output = Option<OutputRef>> + Send>>
 /// The future [`FlowRunner::prepare`] returns, once the surfaces are ready
 /// or could not be made so; a task goes on either way.
 pub type PrepareFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
+
+/// The remaining work a host may try after Jev and its rescuer cannot finish
+/// one top-level step.
+#[derive(Debug, Clone)]
+pub struct FailedStepRecovery {
+    /// The task whose browser session is still open.
+    pub task: TaskId,
+    /// Redacted context for the failed step.
+    pub briefing: crate::Briefing,
+    /// The task's original browser and payment constraints.
+    pub constraints: TaskConstraints,
+    /// Actions left in the task budget.
+    pub remaining_actions: u32,
+    /// Jev evaluations left in the task budget.
+    pub remaining_model_calls: u32,
+    /// Time left in the task budget, when bounded.
+    pub remaining_ms: Option<u64>,
+    /// The shared task budget for host model calls and active recovery time.
+    pub host_budget: TaskBudgetScope,
+}
+
+/// What a host's bounded failed-step recovery did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FailedStepRecoveryResult {
+    /// The host completed only the failed step; `TinyComputer` may run its tail.
+    Completed {
+        /// Why the host considers that step complete.
+        reason: String,
+        /// Browser actions spent while recovering it.
+        actions: u32,
+        /// Model calls spent while recovering it.
+        model_calls: u32,
+    },
+    /// The host could not safely complete the step.
+    GiveUp {
+        /// Why recovery stopped.
+        reason: String,
+    },
+}
+
+/// The future returned by [`FlowRunner::recover_failed_step`].
+pub type FailedStepRecoveryFuture = Pin<Box<dyn Future<Output = FailedStepRecoveryResult> + Send>>;
+
+/// The task and constraints a host needs to recover an unavailable plan.
+#[derive(Debug, Clone)]
+pub struct PlanRecoveryRequest {
+    /// The task whose browser session is ready for the plan request.
+    pub task: TaskId,
+    /// The caller's task description.
+    pub task_text: String,
+    /// The guide the caller would otherwise use to supply a flow.
+    pub guide: String,
+    /// The task's original browser and payment constraints.
+    pub constraints: TaskConstraints,
+    /// Names the plan may reference; values are never included.
+    pub known_names: Vec<String>,
+    /// Secret names the flow may reference as handles.
+    pub secret_names: Vec<String>,
+    /// Actions left in the task budget.
+    pub remaining_actions: u32,
+    /// Jev evaluations left in the task budget.
+    pub remaining_model_calls: u32,
+    /// Time left in the task budget, when bounded.
+    pub remaining_ms: Option<u64>,
+    /// The shared task budget for host model calls and active planning time.
+    pub host_budget: TaskBudgetScope,
+}
+
+/// A same-task plan the host derived, or why it could not derive one.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PlanRecoveryResult {
+    /// A caller-validated flow to install on the existing task.
+    Plan(Flow),
+    /// No safe plan could be supplied.
+    GiveUp(String),
+}
+
+/// The future returned by [`FlowRunner::recover_plan`].
+pub type PlanRecoveryFuture = Pin<Box<dyn Future<Output = PlanRecoveryResult> + Send>>;
 
 /// Runs a task's flows, on surfaces that live as long as the task.
 pub trait FlowRunner: Send + Sync + 'static {
@@ -89,6 +235,54 @@ pub trait FlowRunner: Send + Sync + 'static {
         constraints: &TaskConstraints,
         request: RunFlowRequest,
     ) -> FlowFuture;
+
+    /// Returns only the current browser origin, with path, query and
+    /// fragment omitted. A same-task planner handoff uses this as location
+    /// context without reading page contents.
+    fn page_origin(&self, _task: &TaskId) -> PageOriginFuture {
+        Box::pin(async { None })
+    }
+
+    /// Runs a task flow with its usage recorder attached to model calls.
+    ///
+    /// Runners that do not account for model usage may keep the default. A
+    /// runner backed by [`JevRuntime`](crate::JevRuntime) should override
+    /// this method and attach `usage` to the cloned runtime before running.
+    fn run_with_usage(
+        &self,
+        task: &TaskId,
+        constraints: &TaskConstraints,
+        request: RunFlowRequest,
+        _usage: std::sync::Arc<crate::UsageRecorder>,
+    ) -> FlowFuture {
+        self.run(task, constraints, request)
+    }
+
+    /// Attempts a bounded recovery of one failed top-level step. The caller
+    /// invokes this only after its configured Jev rescuer gives up or is
+    /// unavailable. The default preserves the task's failure.
+    fn recover_failed_step(&self, _request: FailedStepRecovery) -> FailedStepRecoveryFuture {
+        Box::pin(async {
+            FailedStepRecoveryResult::GiveUp {
+                reason: "the host has no failed-step recovery".to_owned(),
+            }
+        })
+    }
+
+    /// Whether the host can asynchronously write a plan for a task that has
+    /// no planner configured. Defaults to `false` so existing hosts keep the
+    /// immediate `needs_plan` behavior.
+    fn plan_recovery_enabled(&self) -> bool {
+        false
+    }
+
+    /// Writes a validated flow for the existing task. The default keeps the
+    /// task at `needs_plan`.
+    fn recover_plan(&self, _request: PlanRecoveryRequest) -> PlanRecoveryFuture {
+        Box::pin(async {
+            PlanRecoveryResult::GiveUp("the host cannot write a task plan".to_owned())
+        })
+    }
 
     /// The visible text of the task's surface now, to spot a wall only a
     /// person can pass. Empty by default.
@@ -140,6 +334,17 @@ pub trait FlowRunner: Send + Sync + 'static {
         Box::pin(async {})
     }
 
+    /// Warms Jev while the task is planned, recording those calls in the
+    /// same task tally. Runners that warm the model override this method.
+    fn warm_with_usage(
+        &self,
+        task: &TaskId,
+        votes: u32,
+        _usage: std::sync::Arc<crate::UsageRecorder>,
+    ) -> PrepareFuture {
+        self.warm(task, votes)
+    }
+
     /// Writes an `event` of the time a task spends outside its flows
     /// (`plan`, `rescue`, `resume`) to the debug journal: the task's own,
     /// or for `PlanTask`, which plans before any task exists (`task` is
@@ -151,6 +356,12 @@ pub trait FlowRunner: Send + Sync + 'static {
         _event: &str,
         _fields: &dyn Fn() -> serde_json::Value,
     ) {
+    }
+
+    /// Replaces host-held secret values in text before a task snapshot is
+    /// emitted. Runners without host-side secrets may keep the default.
+    fn redact(&self, _task: &TaskId, text: &str) -> String {
+        text.to_owned()
     }
 }
 

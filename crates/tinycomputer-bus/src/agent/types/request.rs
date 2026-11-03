@@ -50,6 +50,11 @@ pub struct StartTaskRequest {
     pub task: Option<String>,
     /// A flow to run instead of planning one.
     pub flow: Option<Flow>,
+    /// After a supplied flow completes, continue the same task by planning
+    /// `task` from the current surface. The task id and browser session are
+    /// retained; the named start page is not reopened.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub handoff_to_planner: bool,
     /// Values the task may type, by name — traveller name, date of birth,
     /// email, phone, card number.
     ///
@@ -59,6 +64,11 @@ pub struct StartTaskRequest {
     /// and any value that is a card number — are templates: Jev and the
     /// planner only ever see `${name}`, and the value is typed locally.
     pub facts: BTreeMap<String, String>,
+    /// Opaque handles for secret facts whose values remain in the host.
+    /// The map key is the fact name used by the flow; the handle itself must
+    /// never be expanded into a model-facing string.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub fact_handles: BTreeMap<String, SecretHandle>,
     /// Names among `facts` to keep secret on top of the ones recognised as
     /// sensitive. A name here that is not in `facts` is refused, so a typo
     /// cannot leave a value shared.
@@ -75,7 +85,7 @@ pub struct StartTaskRequest {
     /// hands what its steps read to one reasoning-model pass that returns
     /// JSON in this shape, as `done.result`; absent, a task ends with its
     /// records only.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<TaskOutput>,
     /// The site the task starts on, a plain host name. When set and the host
     /// serves `SiteMemoryHost`, the module hands the task what finished tasks
@@ -84,6 +94,57 @@ pub struct StartTaskRequest {
     /// the task neither reads nor writes site memory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub site: Option<String>,
+}
+
+/// Host-side reference to a secret fact. Only its opaque handle and safe
+/// display metadata cross the engine boundary.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SecretHandle {
+    /// Opaque identifier resolved by the host when the field is typed.
+    pub handle: String,
+    /// Safe mask shown in reports and model context.
+    pub mask: String,
+    /// Host-defined category, such as `payment_card`.
+    pub kind: String,
+}
+
+impl std::fmt::Debug for SecretHandle {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SecretHandle")
+            .field("handle", &"[opaque]")
+            .field("mask", &self.mask)
+            .field("kind", &self.kind)
+            .finish()
+    }
+}
+
+/// Opaque, host-issued context carried from a task continuation to a
+/// `ConsequenceHost` review. The module must relay it unchanged and never
+/// treat it as authorization. Debug output deliberately hides the value.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct HostContext(String);
+
+impl HostContext {
+    /// Wraps a host-issued opaque context value.
+    #[must_use]
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    /// Returns the opaque value for host-side lookup.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for HostContext {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("HostContext([opaque])")
+    }
 }
 
 /// What a finished task returns, beyond its raw records.
@@ -172,6 +233,9 @@ pub struct TaskBudget {
     /// How many ways each decision is asked before its answers are averaged;
     /// the module's default when unset.
     pub votes: Option<u32>,
+    /// Turns each `do` step may spend before it fails as not accomplished;
+    /// the module's default (8) when unset, at most 32.
+    pub max_do_turns: Option<u32>,
     /// How each flow run asks its decisions; the narrow strategy when unset.
     pub strategy: Option<crate::FlowStrategy>,
     /// How much each flow run deliberates before acting; the deep level
@@ -209,48 +273,22 @@ pub struct ContinueTaskRequest {
     /// Values for a `needs_input` pause, by the field names it listed. Added
     /// to the task's facts.
     pub inputs: BTreeMap<String, String>,
+    /// Opaque host handles for secret values the task asked for. The value
+    /// remains with the host and is resolved only when the task types it.
+    /// A name cannot be supplied in both `inputs` and `fact_handles`.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub fact_handles: BTreeMap<String, SecretHandle>,
     /// The decision on a `needs_approval` pause, or `true` to go past a
     /// non-payment `checkpoint`.
     pub approve: Option<bool>,
+    /// Opaque host-issued context for reviewing this continuation. The module
+    /// carries it to `ConsequenceHost` without interpreting or authorizing it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_context: Option<HostContext>,
     /// A free-text answer, for a pause that asked a question — or, for
     /// `needs_human`, `"done"` once the person has finished.
     pub answer: Option<String>,
-    /// Opaque host-issued context to relay unchanged to consequence review.
-    /// This value is not authorization and is never interpreted by the module.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub host_context: Option<HostContext>,
 }
-
-/// Opaque, host-issued context carried from a task continuation to a
-/// `ConsequenceHost` review. The module relays it unchanged and never treats
-/// it as authorization. Debug output deliberately hides the value.
-#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct HostContext(String);
-
-impl HostContext {
-    /// Wraps a host-issued opaque context value.
-    #[must_use]
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
-    }
-
-    /// Returns the opaque value for host-side lookup.
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::fmt::Debug for HostContext {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("HostContext([opaque])")
-    }
-}
-
-#[cfg(test)]
-#[path = "request_tests.rs"]
-mod tests;
 
 /// A task named in a request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

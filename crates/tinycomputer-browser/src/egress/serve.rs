@@ -13,6 +13,22 @@ use super::{
     request::{has_valid_buffered_body, read_proxy_request},
 };
 
+pub(super) async fn serve(
+    client: TcpStream,
+    auth: Arc<dyn EgressAuthorizer>,
+    session_id: String,
+    proxy_password: String,
+) -> io::Result<()> {
+    Box::pin(serve_with_connector(
+        client,
+        auth,
+        session_id,
+        proxy_password,
+        TcpStream::connect,
+    ))
+    .await
+}
+
 pub(super) async fn serve_with_connector<C, F>(
     mut client: TcpStream,
     auth: Arc<dyn EgressAuthorizer>,

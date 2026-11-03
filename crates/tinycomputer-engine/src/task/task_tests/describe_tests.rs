@@ -8,6 +8,26 @@ use tinycomputer_bus::{JevConfiguration, JevProvider};
 
 use super::rescue_tests::Model;
 
+fn continue_with_handle(
+    id: tinycomputer_bus::agent::TaskId,
+) -> tinycomputer_bus::agent::ContinueTaskRequest {
+    tinycomputer_bus::agent::ContinueTaskRequest {
+        id,
+        approve: Some(true),
+        answer: Some(String::new()),
+        host_context: Some(tinycomputer_bus::agent::HostContext::new("opaque-context")),
+        fact_handles: std::collections::BTreeMap::from([(
+            "email".to_owned(),
+            tinycomputer_bus::agent::SecretHandle {
+                handle: "opaque-email".to_owned(),
+                mask: "‹email›".to_owned(),
+                kind: "asked_input".to_owned(),
+            },
+        )]),
+        ..tinycomputer_bus::agent::ContinueTaskRequest::default()
+    }
+}
+
 /// A decision model summary, as a configured runtime reports it.
 fn jev() -> JevConfiguration {
     JevConfiguration {
@@ -183,12 +203,25 @@ async fn describe_schemas_name_every_request_field() {
     };
 
     let start = StartTaskRequest {
+        handoff_to_planner: true,
         output: Some(tinycomputer_bus::agent::TaskOutput::default()),
+        fact_handles: std::collections::BTreeMap::from([(
+            "card number".to_owned(),
+            tinycomputer_bus::agent::SecretHandle {
+                handle: "opaque-card-reference".to_owned(),
+                mask: "•••• 1111".to_owned(),
+                kind: "payment_card".to_owned(),
+            },
+        )]),
         ..StartTaskRequest::default()
     };
     let start = serde_json::to_value(start).unwrap();
     let start_schema = schema("StartTask");
     assert_eq!(documented(&start_schema), fields(&start));
+    assert_eq!(
+        start_schema["properties"]["handoff_to_planner"]["default"],
+        false
+    );
     // The host's own settings are no model's to set, so they are not offered.
     let offered = fields(&start["constraints"])
         .into_iter()
@@ -208,6 +241,7 @@ async fn describe_schemas_name_every_request_field() {
         max_actions: Some(1),
         max_model_calls: Some(1),
         votes: Some(1),
+        max_do_turns: Some(1),
         strategy: Some(tinycomputer_bus::FlowStrategy::default()),
         deliberation: Some(tinycomputer_bus::Deliberation::default()),
         max_elapsed_ms: Some(1),
@@ -224,7 +258,20 @@ async fn describe_schemas_name_every_request_field() {
 
     let plan = serde_json::to_value(tinycomputer_bus::agent::PlanTaskRequest::default()).unwrap();
     assert_eq!(documented(&schema("PlanTask")), fields(&plan));
+}
 
+#[tokio::test]
+async fn describe_schemas_name_continuation_request_fields() {
+    let (tasks, _) = controller(Vec::new());
+    let described = capabilities(Vec::new(), Some(&jev()), &tasks);
+    let schema = |name: &str| {
+        described
+            .members
+            .iter()
+            .find(|member| member.name == name)
+            .map(|member| member.input.clone())
+            .expect("the member is documented")
+    };
     let id = tinycomputer_bus::agent::TaskId::new("t-1");
     let others = [
         (
@@ -236,12 +283,7 @@ async fn describe_schemas_name_every_request_field() {
         ),
         (
             "ContinueTask",
-            serde_json::to_value(tinycomputer_bus::agent::ContinueTaskRequest {
-                id: id.clone(),
-                approve: Some(true),
-                answer: Some(String::new()),
-                ..tinycomputer_bus::agent::ContinueTaskRequest::default()
-            }),
+            serde_json::to_value(continue_with_handle(id.clone())),
         ),
         (
             "CancelTask",
@@ -255,10 +297,23 @@ async fn describe_schemas_name_every_request_field() {
     for (member, request) in others {
         assert_eq!(
             documented(&schema(member)),
-            fields(&request.unwrap()),
+            if member == "ContinueTask" {
+                fields(&request.unwrap())
+                    .into_iter()
+                    .filter(|field| field != "host_context")
+                    .collect()
+            } else {
+                fields(&request.unwrap())
+            },
             "{member}"
         );
     }
+    assert!(
+        schema("ContinueTask")["properties"]
+            .get("host_context")
+            .is_none(),
+        "host context is injected by the trusted host, not exposed to agents"
+    );
     // Every member with a request object is compared above; the rest take
     // no argument.
     for member in &described.members {

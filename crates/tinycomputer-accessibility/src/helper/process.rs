@@ -105,18 +105,35 @@ pub(crate) fn helper_send_receive(
     } // UNIFIED_HELPER released here — fire-and-forget callers can proceed
 
     // Read until the line matches `id` (discards stale lines after a timeout or reordering).
-    let deadline = Instant::now() + HELPER_RECV_TIMEOUT;
+    match await_reply(&RESPONSE_RX, &id_str, HELPER_RECV_TIMEOUT)? {
+        Some(value) => Ok(value),
+        None => {
+            reset_helper_process();
+            Err(format!(
+                "helper response timed out waiting for id {id_str} (stale lines may follow)"
+            ))
+        }
+    }
+}
+
+/// Reads lines from the helper's reply channel until one carries `id_str`,
+/// discarding blank, stale, and unnumbered lines. `None` when `timeout`
+/// passes first.
+#[cfg(target_os = "macos")]
+fn await_reply(
+    rx_slot: &StdMutex<Option<mpsc::Receiver<String>>>,
+    id_str: &str,
+    timeout: Duration,
+) -> Result<Option<Value>, String> {
+    let deadline = Instant::now() + timeout;
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
-            reset_helper_process();
-            return Err(format!(
-                "helper response timed out waiting for id {id_str} (stale lines may follow)"
-            ));
+            return Ok(None);
         }
         let chunk = remaining.min(Duration::from_millis(500));
         let response_line = {
-            let rx_guard = RESPONSE_RX
+            let rx_guard = rx_slot
                 .lock()
                 .map_err(|_| "response rx lock poisoned".to_string())?;
             let rx = rx_guard
@@ -148,9 +165,9 @@ pub(crate) fn helper_send_receive(
         let matches = value
             .get("id")
             .and_then(|v| v.as_str())
-            .is_some_and(|rid| rid == id_str.as_str());
+            .is_some_and(|rid| rid == id_str);
         if matches {
-            return Ok(value);
+            return Ok(Some(value));
         }
         log::debug!(
             "[accessibility] discarding helper response with mismatched or missing id (want id={id_str})"
@@ -397,3 +414,7 @@ fn ensure_helper_binary() -> Result<PathBuf, String> {
 
     Ok(binary_path)
 }
+
+#[cfg(test)]
+#[path = "process_tests.rs"]
+mod tests;

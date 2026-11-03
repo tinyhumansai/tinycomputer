@@ -224,3 +224,37 @@ fn the_elements_a_purpose_names_are_offered_first_in_their_own_order() {
         "filler names nothing"
     );
 }
+
+#[test]
+fn posting_transferring_checking_out_paying_deleting_logging_out_and_signing_are_destructive() {
+    let screen = clickable_screen();
+    let pressable: Vec<&str> = [
+        "Post",
+        "Transfer $500",
+        "Checkout",
+        "Check out",
+        "Pay",
+        "Delete",
+        "Log out",
+        "Sign",
+        "Sign up",
+    ]
+    .into_iter()
+    .filter(|name| !is_destructive(&button(name), &screen, &[]))
+    .collect();
+    assert!(
+        pressable.is_empty(),
+        "pressed with no approval: {pressable:?}"
+    );
+    // Signing in commits to nothing, and a word that only contains one of
+    // these is not one of them.
+    for name in [
+        "Sign in",
+        "Sign-in with Google",
+        "Postcode",
+        "Design",
+        "Logo",
+    ] {
+        assert!(!is_destructive(&button(name), &screen, &[]), "{name}");
+    }
+}

@@ -1,6 +1,7 @@
 //! What a finished flow run means for the task: carry on, or pause or stop
 //! with a status the caller can act on.
 
+use serde::{Deserialize, Serialize};
 use tinycomputer_bus::agent::{PaymentMode, TaskStatus};
 use tinycomputer_bus::{
     DesktopResponse, Flow, FlowAction, FlowRunResult, FlowStep, FlowStopReason, StepOutcome,
@@ -22,8 +23,11 @@ pub(super) enum Next {
 }
 
 /// What runs when a paused task is continued.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(super) enum Resume {
+    /// A host may exchange this private one-time marker for a held-card
+    /// payment transition. It is never accepted by generic `ContinueTask`.
+    PaymentCheckpoint,
     /// Perform the approved irreversible action, then the steps after it.
     Approval {
         /// The `stop_before` phrase, run again with the action allowed.
@@ -168,7 +172,7 @@ fn stopped_before(flow: &Flow, result: &FlowRunResult, payment: PaymentMode) -> 
                 summary: summary(result),
                 continuable: false,
             }),
-            resume: None,
+            resume: Some(Resume::PaymentCheckpoint),
         };
     }
     let path = gated.map(|step| step.path.as_str());

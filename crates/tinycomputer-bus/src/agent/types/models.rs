@@ -19,6 +19,9 @@ pub enum LanguageModelProvider {
     /// (`https://api.tinyhumans.ai/openai/v1`), with the host's `TinyHumans`
     /// bearer. It takes the same `vendor/model` ids as `OpenRouter`.
     TinyHumans,
+    /// A host-selected OpenAI-compatible endpoint, only for Rust embedding
+    /// hosts; `TinyBus` configuration does not allow custom endpoints.
+    OpenAiCompatible,
 }
 
 /// Non-secret summary of one configured language model: its route and model.

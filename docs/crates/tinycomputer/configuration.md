@@ -45,6 +45,47 @@ about the on-screen overlay the agent draws to show where it is about to act,
 and it is a different setting from `constraints.headed` on a task, which
 controls the *browser's* visibility for that one task.
 
+## `trace_sink`
+
+```json
+{
+  "trace_sink": {
+    "destination": ":1.42"
+  }
+}
+```
+
+Set `trace_sink` to an object containing only the unique callback destination
+prepared for this module by `ModuleHost::prepare_host_callbacks`. The module
+then sends desktop trace events, bounded artifacts, and requested task reports
+to the confidential `TraceSinkHost` interface. A selected sink replaces local
+trace-file and session persistence; it never falls back to `trace_path` when
+the host callback fails. Event failures follow `trace_strict`. A report write
+failure returns a recoverable `TRACE_SINK_FAILED` agent response, so callers
+can retry `TaskReport`. Without this key, or with `false`, the existing
+`trace_path` behavior remains in effect. `true`, malformed objects, and
+well-known bus names are rejected.
+
+## `consequence_host`
+
+```json
+{
+  "consequence_host": {
+    "destination": ":1.42"
+  }
+}
+```
+
+Set `consequence_host` to an object containing only the unique callback
+destination prepared for this module by `ModuleHost::prepare_host_callbacks`.
+The module sends consequence reviews to the host through that confidential
+callback. When a `ContinueTask` approves a pending action for host review,
+failure to reach the configured callback declines the action. A declined
+approval, unanswered pause, or continuation without a pending action does not
+fail solely because this callback is absent. Without this key, or with
+`false`, calls without host context keep using the legacy well-known host
+interface. `true`, malformed objects, and well-known bus names are rejected.
+
 ## `jev`
 
 ```json
@@ -217,12 +258,14 @@ never sent to a provider it was not given for:
 ```json
 {
   "browser": {
-    "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
-    "args": ["--disable-blink-features=AutomationControlled"],
     "perception": "sight",
     "settle": "prompt",
-    "prelaunch": true
+    "prelaunch": true,
+    "egress": {
+      "policy_id": "host-selected-policy",
+      "generation": 4
+    }
   }
 }
 ```
@@ -240,6 +283,29 @@ optional:
 | `perception` | how a task reads a page: `sight` (the default) reads the rendered page as a person sees it, `tree` the accessibility tree alone ([`browser-sight.md`](../../technical/specs/browser-sight.md)) |
 | `settle` | how a task lets a page settle after an action before reading it again: `prompt` (the default) counts the network's 500 ms of quiet from the start, counting only requests that can change the page and for at most 1 s, and then waits only while the page is still changing (at most 400 ms), so an idle page is read again after about 0.6 s; `steady` waits for the network to go idle, at least about 1.1 s, then 400 ms more |
 | `prelaunch` | `true` (the default) opens a browser-only task's browser while `StartTask` plans it (a `task` with no `flow`), so the first step does not wait for the launch, and loads in it the one web address the task's text names, if it names one, so a first step that browses there does not wait for the page either; `false` opens it at the first step |
+| `egress` | Host-private TinySecurity scope. When present, `policy_id` and `generation` are required; browser arguments, an executable override, attached DevTools endpoints, and caller-supplied launch flags are refused. The scope is never a browser or task argument. |
+
+The launch and attach options above apply only when `egress` is absent. With
+`egress` set, TinyComputer owns the executable and launch arguments and refuses
+task `browser_executable` overrides and attached DevTools endpoints.
+
+With `egress`, every launched browser session uses a private, authenticated
+loopback proxy. TinyComputer parses each HTTP request, asks the authenticated
+host callback to delegate destination authorization to TinySecurity, consumes
+a one-use grant, then connects only to one of the exact approved socket
+addresses. HTTP redirects and subresources produce their own requests;
+HTTPS uses CONNECT, so TinySecurity classifies its encrypted contents as
+`OpaqueBrowserTraffic` and does not claim to inspect methods, headers, or
+bodies. Active tunnels are closed when lease validation fails, the policy
+generation changes, or its deadline expires. WebSocket upgrades use the same
+destination path. Failed, missing, timed-out, or malformed callbacks refuse
+the connection before the destination socket is opened.
+
+The enforced Chromium launch disables QUIC and HTTP/2, blocks ordinary browser
+DNS resolution, and disables non-proxied WebRTC UDP. These browser settings
+keep supported web traffic on the policy proxy; OS-level network isolation is
+still required to contain direct sockets from browser features or other
+processes.
 
 Most installs never need any of this: leave `browser` out entirely and the
 linked `agent-browser` engine looks for Chrome itself. An unknown key under

@@ -456,7 +456,7 @@ async fn a_decision_ended_on_a_quorum_widens_past_every_framing_it_asked() {
         votes: 7,
         ..RunFlowRequest::default()
     };
-    let mut run = FlowRun::new(app, &runtime, &request);
+    let mut run = FlowRun::new(app, &runtime, &request, None);
     let mut log = StepLog::default();
     let yes_no = |question: &str| {
         Question::Noul(tinyinference_decisions::Noul {

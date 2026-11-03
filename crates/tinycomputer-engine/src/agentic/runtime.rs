@@ -1,11 +1,12 @@
 //! The Jev runtime: its configured client, the journal it writes, and the
 //! one door every Jev evaluation goes through.
 
+#[cfg(feature = "desktop")]
+use std::{collections::HashMap, sync::Mutex};
 use std::{
-    collections::HashMap,
     future::Future,
     pin::Pin,
-    sync::{Arc, Mutex, atomic::AtomicUsize},
+    sync::{Arc, atomic::AtomicUsize},
     time::Duration,
 };
 
@@ -17,8 +18,10 @@ use tinyinference_decisions::{
 
 use super::flow::MAX_VOTES;
 use super::journal::Journal;
+#[cfg(feature = "desktop")]
 use super::pending::PendingRun;
 use super::sage;
+use crate::{ModelRole, UsageRecorder};
 
 /// How a Jev call retries a provider's server error or rate limit when the
 /// configuration does not say: four more attempts, waiting 1, 2, 4, then 8
@@ -49,22 +52,28 @@ pub(super) const FIRST_TURN: u32 = 2;
 pub struct JevRuntime {
     pub(super) client: Arc<dyn Evaluator>,
     pub(super) configuration: JevConfiguration,
+    #[cfg(feature = "desktop")]
     pub(super) pending: Arc<Mutex<HashMap<String, PendingRun>>>,
     pub(super) journal: Journal,
     /// Hedged copies of framings in flight, shared by every flow run on
     /// this runtime.
     pub(super) copies: Arc<AtomicUsize>,
+    /// Optional task-scoped collector, set by an embedding host's runner.
+    pub(super) usage: Option<Arc<UsageRecorder>>,
 }
 
 impl std::fmt::Debug for JevRuntime {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("JevRuntime")
+        let mut debug = formatter.debug_struct("JevRuntime");
+        debug
             .field("client", &"[configured]")
-            .field("configuration", &self.configuration)
-            .field("pending", &"[redacted]")
+            .field("configuration", &self.configuration);
+        #[cfg(feature = "desktop")]
+        debug.field("pending", &"[redacted]");
+        debug
             .field("journal", &self.journal)
             .field("copies", &self.copies)
+            .field("usage", &self.usage.as_ref().map(|_| "[tracked]"))
             .finish()
     }
 }
@@ -80,7 +89,30 @@ impl JevRuntime {
     /// Returns a `JEV_INVALID_CONFIG` [`DesktopError`] when the provider,
     /// endpoint, or credentials in `request` cannot form a trusted client.
     pub fn configure(request: &JevConfig) -> Result<Self, Box<DesktopError>> {
-        if let Some(endpoint) = &request.endpoint_url
+        Self::configure_inner(request, false)
+    }
+
+    /// Build a Jev runtime for an embedding host, allowing the host to route
+    /// its configured provider to a private endpoint.
+    ///
+    /// The `TinyBus` module uses [`JevRuntime::configure`], which retains the
+    /// module's provider allow-list. This constructor is for Rust hosts that
+    /// own and trust their configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns `JEV_INVALID_CONFIG` when the provider or credentials cannot
+    /// form a client.
+    pub fn configure_for_host(request: &JevConfig) -> Result<Self, Box<DesktopError>> {
+        Self::configure_inner(request, true)
+    }
+
+    fn configure_inner(
+        request: &JevConfig,
+        allow_custom_endpoint: bool,
+    ) -> Result<Self, Box<DesktopError>> {
+        if !allow_custom_endpoint
+            && let Some(endpoint) = &request.endpoint_url
             && !trusted_endpoint(request.provider, endpoint)
         {
             return Err(Box::new(DesktopError::new(
@@ -108,9 +140,11 @@ impl JevRuntime {
                 endpoint_url: request.endpoint_url.clone(),
                 fast: false,
             },
+            #[cfg(feature = "desktop")]
             pending: Arc::new(Mutex::new(HashMap::new())),
             journal: Journal::from_env(),
             copies: Arc::default(),
+            usage: None,
         })
     }
 
@@ -151,9 +185,11 @@ impl JevRuntime {
                 endpoint_url: endpoint.map(str::to_owned),
                 fast,
             },
+            #[cfg(feature = "desktop")]
             pending: Arc::new(Mutex::new(HashMap::new())),
             journal: Journal::from_env(),
             copies: Arc::default(),
+            usage: None,
         })
     }
 
@@ -162,6 +198,13 @@ impl JevRuntime {
     #[must_use]
     pub fn configuration(&self) -> &JevConfiguration {
         &self.configuration
+    }
+
+    /// This runtime recording Jev usage into a task-scoped collector.
+    #[must_use]
+    pub fn with_usage_recorder(mut self, usage: Arc<UsageRecorder>) -> Self {
+        self.usage = Some(usage);
+        self
     }
 
     /// This runtime with the debug journal written under `dir`, whatever
@@ -220,6 +263,7 @@ impl JevRuntime {
     }
 
     /// This runtime writing to `journal`.
+    #[cfg(feature = "desktop")]
     pub(super) fn within(self, journal: Journal) -> Self {
         Self { journal, ..self }
     }
@@ -264,7 +308,30 @@ impl JevRuntime {
         step: Option<&str>,
         request: &EvaluationRequest,
     ) -> std::result::Result<EvaluationResult, EvaluationFailure> {
+        if let Some(usage) = &self.usage {
+            usage.record_started(ModelRole::Jev);
+        }
         let outcome = self.client.evaluate(request).await;
+        match (&self.usage, &outcome) {
+            (Some(usage), Ok(result)) => {
+                usage.record_additional_calls(
+                    ModelRole::Jev,
+                    u64::from(result.attempts.saturating_sub(1)),
+                );
+                usage.record_measurements(
+                    ModelRole::Jev,
+                    result.response.usage.input_tokens,
+                    result.response.usage.cached_input_tokens,
+                    result.response.usage.output_tokens,
+                    result.response.usage.cost_usd_nanos,
+                );
+            }
+            (Some(usage), Err(failure)) => usage.record_additional_calls(
+                ModelRole::Jev,
+                u64::from(failure.attempts.saturating_sub(1)),
+            ),
+            _ => {}
+        }
         self.journal.exchange(step, request, outcome.as_ref());
         outcome
     }
@@ -391,3 +458,7 @@ pub(super) fn client_config(request: &JevConfig) -> ClientConfig {
 pub(super) fn config_error(error: &JevError) -> Box<DesktopError> {
     Box::new(DesktopError::new("JEV_INVALID_CONFIG", error.to_string()))
 }
+
+#[cfg(test)]
+#[path = "runtime_tests.rs"]
+mod tests;

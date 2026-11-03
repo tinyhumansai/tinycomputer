@@ -154,6 +154,30 @@ fn run_request_facts_default_empty_and_round_trip() {
 }
 
 #[test]
+fn run_request_carries_host_handles_and_task_context() {
+    let request: RunFlowRequest = serde_json::from_value(json!({
+        "flow": {"app": "browser", "steps": [{"enter": {"card number": "${card number}"}}]},
+        "facts": ["card number"],
+        "fact_handles": {
+            "card number": {"handle": "opaque-card-reference", "mask": "•••• 1111", "kind": "payment_card"}
+        },
+        "task_id": "t-7"
+    }))
+    .unwrap();
+    assert_eq!(
+        request.fact_handles["card number"].handle,
+        "opaque-card-reference"
+    );
+    assert_eq!(request.task_id.as_deref(), Some("t-7"));
+    let encoded = serde_json::to_value(&request).unwrap();
+    assert_eq!(encoded["fact_handles"]["card number"]["mask"], "•••• 1111");
+    assert_eq!(
+        serde_json::from_value::<RunFlowRequest>(encoded).unwrap(),
+        request
+    );
+}
+
+#[test]
 fn a_brief_pins_its_wire_form_and_defaults_empty() {
     let brief: FlowBrief = serde_json::from_value(json!({
         "goal": "book the cheapest flight to Srinagar",
@@ -180,6 +204,24 @@ fn a_brief_pins_its_wire_form_and_defaults_empty() {
     }))
     .unwrap();
     assert_eq!((request.votes, request.brief.goal.as_str()), (3, "g"));
+    assert_eq!(
+        request.max_do_turns, None,
+        "unset keeps the module's default"
+    );
+    assert!(
+        serde_json::to_value(&request)
+            .unwrap()
+            .get("max_do_turns")
+            .is_none(),
+        "an unset turn limit is left off the wire"
+    );
+    let request: RunFlowRequest = serde_json::from_value(json!({
+        "flow": {"app": "Mail", "steps": ["x"]},
+        "max_do_turns": 12
+    }))
+    .unwrap();
+    assert_eq!(request.max_do_turns, Some(12));
+    assert_eq!(serde_json::to_value(&request).unwrap()["max_do_turns"], 12);
     for (flow_loop, wire) in [
         (FlowLoop::Vote, "vote"),
         (FlowLoop::PageKind, "page_kind"),

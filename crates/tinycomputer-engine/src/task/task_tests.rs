@@ -14,6 +14,8 @@ mod errors_tests;
 mod human_tests;
 mod output_tests;
 mod page_tests;
+mod payment_tests;
+mod persistence_tests;
 mod plan_tests;
 mod rescue_tests;
 mod runner_tests;
@@ -36,7 +38,11 @@ use tinycomputer_bus::{
 
 use super::interpret::app_at;
 use super::publish::next_calls;
-use super::{FlowFuture, FlowRunner, MAX_TASKS, Tasks, capabilities, input_kind};
+use super::{
+    ContinuePaidAtShopRequest, ContinuePaymentRequest, FailedStepRecovery,
+    FailedStepRecoveryFuture, FailedStepRecoveryResult, FlowFuture, FlowRunner, MAX_TASKS,
+    PlanRecoveryFuture, PlanRecoveryRequest, PlanRecoveryResult, Tasks, capabilities, input_kind,
+};
 
 /// Replies queued in order; a missing reply never resolves, like a flow
 /// still running.
@@ -44,8 +50,13 @@ use super::{FlowFuture, FlowRunner, MAX_TASKS, Tasks, capabilities, input_kind};
 struct Script {
     replies: Mutex<VecDeque<DesktopResponse>>,
     requests: Mutex<Vec<RunFlowRequest>>,
+    planner_text: Arc<Mutex<Vec<String>>>,
+    constraints: Mutex<Vec<TaskConstraints>>,
+    host_secrets: Mutex<Vec<String>>,
     /// What the task's surface shows when asked.
     screen: Mutex<Vec<String>>,
+    /// The HTTPS origin of the still-open browser page.
+    origin: Mutex<Option<String>>,
     /// Tasks let go of, in order.
     released: Mutex<Vec<TaskId>>,
     /// The screenshot `capture` hands back, if any.
@@ -62,18 +73,39 @@ struct Script {
     /// Tasks whose Jev connections were warmed while they were planned,
     /// with the votes asked for. The warm-up never ends.
     warmed: Mutex<Vec<(TaskId, u32)>>,
+    /// Optional value a test's `FlowRunner` redacts from task-level outputs.
+    host_secret: Mutex<Option<String>>,
     /// The pages loaded while tasks were planned, with their task.
     opened: Mutex<Vec<(TaskId, String)>>,
+    task_ids: Mutex<Vec<TaskId>>,
+    /// The host's response to a failed-step recovery request.
+    recovery: Mutex<Option<FailedStepRecoveryResult>>,
+    /// Recovery requests, including their redacted task context.
+    recoveries: Mutex<Vec<FailedStepRecovery>>,
+    /// The host's planless recovery response.
+    plan_recovery: Mutex<Option<PlanRecoveryResult>>,
+    /// Reserve host model calls in tests that exercise the task-wide budget.
+    reserve_host_calls: Mutex<bool>,
+    /// Whether each scripted host reservation was accepted.
+    host_call_reservations: Mutex<Vec<bool>>,
+    /// Delay inside the host plan-recovery callback.
+    plan_recovery_delay: Mutex<std::time::Duration>,
+    /// Whether failed-step recovery remains pending until its budget timeout.
+    hang_recovery: Mutex<bool>,
+    /// Planless recovery requests, including named-only facts.
+    plan_requests: Mutex<Vec<PlanRecoveryRequest>>,
 }
 
 impl FlowRunner for Script {
     fn run(
         &self,
-        _task: &TaskId,
-        _constraints: &TaskConstraints,
+        task: &TaskId,
+        constraints: &TaskConstraints,
         request: RunFlowRequest,
     ) -> FlowFuture {
+        self.task_ids.lock().unwrap().push(task.clone());
         self.requests.lock().unwrap().push(request);
+        self.constraints.lock().unwrap().push(constraints.clone());
         let reply = self.replies.lock().unwrap().pop_front();
         Box::pin(async move {
             match reply {
@@ -83,9 +115,70 @@ impl FlowRunner for Script {
         })
     }
 
+    fn recover_failed_step(&self, request: FailedStepRecovery) -> FailedStepRecoveryFuture {
+        let reserve = *self.reserve_host_calls.lock().unwrap();
+        let reservation = reserve.then(|| request.host_budget.try_reserve_model_call());
+        if let Some(accepted) = reservation {
+            self.host_call_reservations.lock().unwrap().push(accepted);
+        }
+        let hang = *self.hang_recovery.lock().unwrap();
+        self.recoveries.lock().unwrap().push(request);
+        let result = if reservation == Some(false) {
+            FailedStepRecoveryResult::GiveUp {
+                reason: "the task model-call budget is spent".to_owned(),
+            }
+        } else {
+            self.recovery.lock().unwrap().take().unwrap_or_else(|| {
+                FailedStepRecoveryResult::GiveUp {
+                    reason: "no scripted recovery".to_owned(),
+                }
+            })
+        };
+        Box::pin(async move {
+            if hang {
+                std::future::pending::<FailedStepRecoveryResult>().await;
+            }
+            result
+        })
+    }
+
+    fn plan_recovery_enabled(&self) -> bool {
+        self.plan_recovery.lock().unwrap().is_some()
+    }
+
+    fn recover_plan(&self, request: PlanRecoveryRequest) -> PlanRecoveryFuture {
+        let reserve = *self.reserve_host_calls.lock().unwrap();
+        let reservation = reserve.then(|| request.host_budget.try_reserve_model_call());
+        if let Some(accepted) = reservation {
+            self.host_call_reservations.lock().unwrap().push(accepted);
+        }
+        let delay = *self.plan_recovery_delay.lock().unwrap();
+        self.plan_requests.lock().unwrap().push(request);
+        let result = if reservation == Some(false) {
+            PlanRecoveryResult::GiveUp("the task model-call budget is spent".to_owned())
+        } else {
+            self.plan_recovery
+                .lock()
+                .unwrap()
+                .take()
+                .unwrap_or_else(|| {
+                    PlanRecoveryResult::GiveUp("no scripted plan recovery".to_owned())
+                })
+        };
+        Box::pin(async move {
+            tokio::time::sleep(delay).await;
+            result
+        })
+    }
+
     fn visible_text(&self, _task: &TaskId) -> super::TextFuture {
         let texts = self.screen.lock().unwrap().clone();
         Box::pin(async move { texts })
+    }
+
+    fn page_origin(&self, _task: &TaskId) -> super::PageOriginFuture {
+        let origin = self.origin.lock().unwrap().clone();
+        Box::pin(async move { origin })
     }
 
     fn capture(&self, _task: &TaskId) -> super::CaptureFuture {
@@ -127,6 +220,26 @@ impl FlowRunner for Script {
             .lock()
             .unwrap()
             .push((task.cloned(), event.to_owned(), fields()));
+    }
+
+    fn redact(&self, _task: &TaskId, text: &str) -> String {
+        let mut redacted = self
+            .host_secrets
+            .lock()
+            .unwrap()
+            .iter()
+            .fold(text.to_owned(), |text, secret| {
+                text.replace(secret, "[redacted]")
+            });
+        if let Some(secret) = self
+            .host_secret
+            .lock()
+            .ok()
+            .and_then(|secret| secret.clone())
+        {
+            redacted = redacted.replace(&secret, "•••• 1111");
+        }
+        redacted
     }
 }
 

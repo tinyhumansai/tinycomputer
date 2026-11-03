@@ -634,6 +634,43 @@ async fn an_action_judged_unhelpful_is_undone_and_not_tried_again() {
 }
 
 #[tokio::test]
+async fn a_do_step_spends_the_turns_its_run_allows() {
+    let ended_after = |max_do_turns: Option<u32>| async move {
+        let run = run_with(
+            App::quirky(Quirk::Frozen),
+            json!({"app": "Mail", "steps": ["open the search results"]}),
+            |request| {
+                request.max_do_turns = max_do_turns;
+                request.max_actions = 120;
+            },
+            |id, question, _| (id == "move").then(|| pick(question, "wait", 0.9)),
+        )
+        .await;
+        assert_eq!(run.result.stop, FlowStopReason::StepFailed);
+        let step = &run.result.steps[0];
+        (step.turns, step.note.clone())
+    };
+
+    let (turns, note) = ended_after(None).await;
+    assert_eq!(turns, 8, "the default is unchanged");
+    assert!(note.contains("not accomplished after 8 turns"), "{note}");
+
+    let (turns, note) = ended_after(Some(3)).await;
+    assert_eq!(turns, 3);
+    assert!(note.contains("not accomplished after 3 turns"), "{note}");
+
+    let (turns, note) = ended_after(Some(12)).await;
+    assert_eq!(turns, 12);
+    assert!(note.contains("not accomplished after 12 turns"), "{note}");
+
+    let (_, note) = ended_after(Some(500)).await;
+    assert!(
+        note.contains("not accomplished after 32 turns"),
+        "capped by the module: {note}"
+    );
+}
+
+#[tokio::test]
 async fn waits_that_change_nothing_are_not_a_stall_and_stop_being_offered() {
     let run = run_with(
         App::quirky(Quirk::Frozen),
@@ -1259,4 +1296,25 @@ fn a_pressed_controls_copies_are_only_on_the_other_items_of_its_list() {
         act::copies_of(&screen, &screen.candidates[3]).is_empty(),
         "the bar's own has none"
     );
+}
+
+#[tokio::test]
+async fn return_is_not_pressed_when_the_flow_stops_before_sending() {
+    // In a message composer Return sends. The flow declared it stops before
+    // sending, so the "confirm" shortcut must not press Return unasked.
+    let run = run_with(
+        App::default(),
+        json!({"app": "Mail", "steps": [
+            "confirm the message text",
+            {"stop_before": "sending the message"}
+        ]}),
+        |request| request.max_actions = 2,
+        |id, question, _| match id {
+            "shortcut" => Some(pick(question, "confirm", 0.9)),
+            _ => None,
+        },
+    )
+    .await;
+    let presses = run.app.sim().presses.clone();
+    assert!(!presses.iter().any(|key| key == "return"), "{presses:?}");
 }

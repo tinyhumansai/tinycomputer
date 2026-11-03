@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "The tinycomputer agent runtime: Jev decision loops, goals, and intent flows over the desktop (and, next, the browser)."
+description = "The tinycomputer agent runtime: Jev decision loops and embeddable browser task flows, with optional desktop support."
 documentation = "https://docs.rs/tinycomputer-engine"
 readme = "README.md"
 keywords = ["automation", "agent", "accessibility", "desktop"]
@@ -17,8 +17,10 @@ publish = false
 tinycomputer-bus = { workspace = true }
 # The surface trait, screen model, and text delivery the loops run over.
 tinycomputer-core = { workspace = true }
-# The desktop surface the runtime observes and acts on.
-tinycomputer-desktop = { workspace = true }
+# The browser surface used by in-process browser task hosts.
+tinycomputer-browser = { workspace = true }
+# The desktop surface, enabled by the default `desktop` feature.
+tinycomputer-desktop = { workspace = true, optional = true }
 # The Jev decisions client every loop asks.
 tinyinference-decisions = { workspace = true }
 # Snapshots, replies, and Jev state are JSON values throughout.
@@ -28,6 +30,7 @@ serde = { workspace = true }
 getrandom = { workspace = true }
 # Blocking engine calls run on `spawn_blocking`; loops sleep between looks.
 tokio = { workspace = true }
+url = { workspace = true }
 
 # The planner's OpenRouter model, only with the `planner` feature. The shipped
 # module links it, but it stays inert until private configuration supplies a
@@ -35,7 +38,9 @@ tokio = { workspace = true }
 tinyinference-llm = { workspace = true, optional = true }
 
 [features]
-default = []
+default = ["desktop"]
+# Desktop observation and action entry points.
+desktop = ["dep:tinycomputer-desktop"]
 # An LLM planner that turns plain-language tasks into flows.
 planner = ["dep:tinyinference-llm"]
 

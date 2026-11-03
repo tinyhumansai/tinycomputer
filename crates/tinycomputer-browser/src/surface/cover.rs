@@ -29,7 +29,7 @@ use super::sight;
 /// a pointer, nothing of the element), on an even grid ([`SPOT_GRID`] cells
 /// a side), or `null` when there is none. The layer stops taking the
 /// pointer only for the instant each point beneath it is read.
-pub(crate) const COVER_JS: &str = r#"((x, y, exact, press, grid) => {
+pub(crate) const COVER_JS: &str = r#"((x, y, exact, press, grid, hideFormValues = false) => {
   const squash = (text) => (text || '').replace(/\s+/g, ' ').trim();
   const cut = (text) => (text.length > 60 ? `${text.slice(0, 59)}…` : text);
   // Up from a node, across shadow roots to their hosts.
@@ -41,6 +41,33 @@ pub(crate) const COVER_JS: &str = r#"((x, y, exact, press, grid) => {
   const nearest = (node, selector) => {
     for (let at = node; at; at = above(at)) if (at.matches && at.matches(selector)) return at;
     return null;
+  };
+  const PRIVATE_FIELD_ROLES = [
+    'textbox', 'searchbox', 'combobox', 'textarea', 'document', 'spinbutton',
+    'checkbox', 'radio', 'switch', 'menuitemcheckbox', 'menuitemradio',
+  ];
+  const privateField = (element) => {
+    if (!element || !element.tagName) return false;
+    const tag = element.tagName.toLowerCase();
+    const role = (element.getAttribute('role') || '').toLowerCase().split(/\s+/)[0];
+    return ['input', 'select', 'textarea'].includes(tag)
+      || element.isContentEditable || PRIVATE_FIELD_ROLES.includes(role);
+  };
+  const insidePrivateField = (element) => {
+    for (let at = element; at; at = above(at)) if (privateField(at)) return true;
+    return false;
+  };
+  const safeText = (element) => {
+    if (!hideFormValues) return squash(element.innerText);
+    if (insidePrivateField(element)) return '';
+    // A generic cover can aggregate text from editable descendants.
+    const clone = element.cloneNode(true);
+    const fields = [
+      'input', 'select', 'textarea', '[contenteditable=""]', '[contenteditable=true]',
+      ...PRIVATE_FIELD_ROLES.map((role) => `[role~="${role}"]`),
+    ].join(', ');
+    clone.querySelectorAll(fields).forEach((field) => field.remove());
+    return squash(clone.innerText || clone.textContent);
   };
   const topAt = (px, py) => {
     let node = document.elementFromPoint(px, py);
@@ -62,22 +89,25 @@ pub(crate) const COVER_JS: &str = r#"((x, y, exact, press, grid) => {
   const control = nearest(hit, CONTROL);
   if (control) {
     const role = control.getAttribute('role') || ROLES[control.tagName.toLowerCase()] || 'control';
-    const name = cut(squash(control.getAttribute('aria-label') || control.innerText
-      || control.getAttribute('title') || control.getAttribute('placeholder')));
+    const attributeName = squash(control.getAttribute('aria-label')
+      || control.getAttribute('title') || control.getAttribute('placeholder'));
+    const nestedInField = hideFormValues && insidePrivateField(above(control));
+    const name = cut(nestedInField ? '' : (attributeName || safeText(control)));
     return { said: name ? `${role} "${name}"` : `an unnamed ${role}`, bare: false, spot: null };
   }
   const dialog = nearest(hit, 'dialog, [role=dialog], [role=alertdialog], [aria-modal=true]');
   if (dialog) {
-    const name = cut(squash(dialog.getAttribute('aria-label') || dialog.innerText));
+    const name = cut(squash(dialog.getAttribute('aria-label') || safeText(dialog)));
     return { said: name ? `a dialog showing "${name}"` : 'a dialog', bare: false, spot: null };
   }
-  const own = squash([...hit.childNodes].filter((node) => node.nodeType === 3)
+  const own = hideFormValues && insidePrivateField(hit) ? '' : squash([...hit.childNodes]
+    .filter((node) => node.nodeType === 3)
     .map((node) => node.textContent).join(' '));
   if (own) return { said: `a layer showing "${cut(own)}"`, bare: false, spot: null };
   if (nearest(hit, 'img, svg, video, canvas, iframe, picture, object, embed')) {
     return { said: 'a picture', bare: false, spot: null };
   }
-  const held = cut(squash(hit.innerText));
+  const held = cut(safeText(hit));
   const said = held ? `a layer holding "${held}"` : 'an empty layer';
   const component = hit.getRootNode() !== document || Boolean(hit.shadowRoot) || hit.tagName.includes('-');
   let placed = false;
@@ -150,12 +180,12 @@ impl BrowserSurface {
         } else {
             "null".to_owned()
         };
-        let script = format!("{COVER_JS}({x}, {y}, {exact}, {press}, {SPOT_GRID})");
+        let script = format!(
+            "{COVER_JS}({x}, {y}, {exact}, {press}, {SPOT_GRID}, {})",
+            self.hide_form_values
+        );
         let data = self
-            .block(
-                self.browser
-                    .command(&id, json!({"action": "evaluate", "script": script})),
-            )
+            .block(self.browser.observe_target_check(&id, script))
             .map_err(|error| error.to_string())?;
         match data.get("result") {
             Some(cover) if cover.get("unread") == Some(&Value::Bool(true)) => {

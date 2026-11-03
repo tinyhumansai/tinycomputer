@@ -21,16 +21,16 @@ fn every_contract_surface_maps_onto_an_engine_surface() {
         (bus::Surface::Alert, "alert"),
         (bus::Surface::Desktop, "desktop"),
         (bus::Surface::Taskbar, "taskbar"),
-        (bus::Surface::SystemTray, "system_tray"),
-        (bus::Surface::QuickSettings, "quick_settings"),
-        (bus::Surface::NotificationCenter, "notification_center"),
+        (bus::Surface::SystemTray, "system-tray"),
+        (bus::Surface::QuickSettings, "quick-settings"),
+        (bus::Surface::NotificationCenter, "notification-center"),
         (bus::Surface::Toolbar, "toolbar"),
         (bus::Surface::Dock, "dock"),
         (bus::Surface::Spotlight, "spotlight"),
-        (bus::Surface::MenuBarExtras, "menu_bar_extras"),
-        (bus::Surface::SystemTrayOverflow, "system_tray_overflow"),
-        (bus::Surface::StartMenu, "start_menu"),
-        (bus::Surface::ActionCenter, "action_center"),
+        (bus::Surface::MenuBarExtras, "menu-bar-extras"),
+        (bus::Surface::SystemTrayOverflow, "system-tray-overflow"),
+        (bus::Surface::StartMenu, "start-menu"),
+        (bus::Surface::ActionCenter, "action-center"),
     ] {
         assert_eq!(convert::surface(contract).as_str(), engine);
     }
@@ -99,15 +99,18 @@ fn a_half_specified_point_becomes_no_point_at_all() {
 
 #[test]
 fn a_drag_endpoint_carries_a_ref_or_a_point_but_never_half_of_one() {
-    let by_ref = convert::drag_endpoint(bus::DragEndpoint::at_ref("@s1:e2"));
+    let by_ref = convert::drag_endpoint(bus::DragEndpoint::at_ref("@s1:e2"), None);
     assert_eq!(by_ref.ref_id.as_deref(), Some("@s1:e2"));
     assert_eq!(by_ref.xy, None);
 
-    let half = convert::drag_endpoint(bus::DragEndpoint {
-        ref_id: None,
-        x: Some(1.0),
-        y: None,
-    });
+    let half = convert::drag_endpoint(
+        bus::DragEndpoint {
+            ref_id: None,
+            x: Some(1.0),
+            y: None,
+        },
+        None,
+    );
     assert_eq!(half.xy, None);
 }
 
@@ -130,8 +133,23 @@ fn a_ref_request_converts_field_for_field() {
     });
 
     assert_eq!(args.ref_id, "@s1:e2");
-    assert_eq!(args.snapshot_id.as_deref(), Some("s1"));
     assert_eq!(args.timeout_ms, Some(1_000));
+}
+
+#[test]
+fn a_bare_ref_is_qualified_by_its_snapshot() {
+    assert_eq!(
+        convert::qualified_ref("@e2".to_owned(), Some("s1")),
+        "@s1:e2"
+    );
+    assert_eq!(
+        convert::qualified_ref("@s2:e2".to_owned(), Some("s1")),
+        "@s2:e2"
+    );
+    assert_eq!(
+        convert::qualified_ref("@@e2".to_owned(), Some("s1")),
+        "@@e2"
+    );
 }
 
 #[test]

@@ -221,6 +221,8 @@ configuration validates.
 | `session_id` | string | agent-desktop session to join |
 | `trace_path` | string | where agent-desktop writes its trace |
 | `trace_strict` | bool | fail a call when its trace cannot be written |
+| `trace_sink` | object | optional host-owned persistence at the unique destination prepared by `ModuleHost::prepare_host_callbacks`; replaces local trace and session persistence |
+| `consequence_host` | object | optional confidential consequence review callback at the unique destination prepared by `ModuleHost::prepare_host_callbacks`; a missing callback denies an approved pending action under host review |
 | `headed` | bool | use real input instead of accessibility actions |
 | `jev` | object | decision provider (`type_safe`, `open_router`, `tiny_humans_open_router`, `open_jev`, `sage`), API key, optional model, approved endpoint, timeout, retries, `sdk_name` for the TinyHumans proxy, and `fast` for Sage |
 | `planner` | object | `api_key`, `provider` (`open_router` or `tiny_humans`), approved `endpoint_url`, `sdk_name`, and optional `model` for the planner, optional `rescue_route` giving the rescuer its own route and key, optional `rescue_model` for rescuing failed steps (`docs/technical/specs/task-rescue.md`), and optional `output_model` for shaping a finished task's answer (`docs/technical/specs/task-output.md`); absent means no planner, no rescues, and no output shapes |

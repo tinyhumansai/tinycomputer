@@ -2,11 +2,91 @@
 
 use serde_json::json;
 use tinycomputer_bus::JevOperation;
-use tinycomputer_core::surface::{Depth, Surface};
+use tinycomputer_bus::browser::ElementRef;
+use tinycomputer_core::surface::{Candidate, Depth, Surface};
 
 use super::{Harness, harness, page_fake};
 use crate::fake::{Fake, failure, ok};
 use crate::surface::{Denoised, Perception};
+
+#[test]
+fn sight_targets_map_to_unique_current_native_refs_only() {
+    let mut unique = Candidate {
+        ref_id: "seen:1".to_owned(),
+        role: "button".to_owned(),
+        name: Some("Accept cookies".to_owned()),
+        ..Candidate::default()
+    };
+    crate::surface::attach_unique_snapshot_ref(
+        &mut unique,
+        &[ElementRef {
+            id: "e1".to_owned(),
+            role: "button".to_owned(),
+            name: "Accept cookies".to_owned(),
+        }],
+    );
+    assert_eq!(unique.ref_id, "e1");
+
+    let mut duplicate = Candidate {
+        ref_id: "seen:2".to_owned(),
+        role: "button".to_owned(),
+        name: Some("Continue".to_owned()),
+        ..Candidate::default()
+    };
+    crate::surface::attach_unique_snapshot_ref(
+        &mut duplicate,
+        &[
+            ElementRef {
+                id: "e2".to_owned(),
+                role: "button".to_owned(),
+                name: "Continue".to_owned(),
+            },
+            ElementRef {
+                id: "e3".to_owned(),
+                role: "button".to_owned(),
+                name: "Continue".to_owned(),
+            },
+        ],
+    );
+    assert_eq!(duplicate.ref_id, "seen:2");
+
+    let mut stale_shadow_ref = Candidate {
+        ref_id: "e2".to_owned(),
+        role: "button".to_owned(),
+        name: Some("Allow Selection".to_owned()),
+        ..Candidate::default()
+    };
+    assert!(!crate::surface::attach_unique_snapshot_ref(
+        &mut stale_shadow_ref,
+        &[ElementRef {
+            id: "e2".to_owned(),
+            role: "button".to_owned(),
+            name: "Different target".to_owned(),
+        }],
+    ));
+
+    let mut ambiguous_shadow_ref = Candidate {
+        ref_id: "e3".to_owned(),
+        role: "button".to_owned(),
+        name: Some("Continue".to_owned()),
+        ..Candidate::default()
+    };
+    assert!(!crate::surface::attach_unique_snapshot_ref(
+        &mut ambiguous_shadow_ref,
+        &[
+            ElementRef {
+                id: "e3".to_owned(),
+                role: "button".to_owned(),
+                name: "Continue".to_owned(),
+            },
+            ElementRef {
+                id: "e4".to_owned(),
+                role: "button".to_owned(),
+                name: "Continue".to_owned(),
+            },
+        ],
+    ));
+}
 
 /// A page read by sight: one field and one result link a card covers.
 fn sighted_fake() -> Fake {
@@ -29,6 +109,13 @@ fn sighted_fake() -> Fake {
                 ]
             }})))
         }
+        "snapshot" => Some(ok(&json!({
+            "snapshot": "- textbox \"To\" [ref=e1]\n- link [ref=e2]",
+            "refs": {
+                "e1": {"role": "textbox", "name": "To"},
+                "e2": {"role": "link", "name": ""}
+            }
+        }))),
         "click" => Some(failure(
             "Element is covered by <div.layer> at its click point, so the input would land on that element instead.",
         )),
@@ -44,10 +131,10 @@ fn sighted_fake() -> Fake {
 fn sight_reads_the_page_and_its_refs_reach_their_marks() {
     let Harness { fake, surface, .. } = harness("sight", sighted_fake());
     let screen = surface.observe("flights", None, Depth::Skeleton).unwrap();
-    assert!(!fake.actions().iter().any(|action| action == "snapshot"));
+    assert!(fake.actions().iter().any(|action| action == "snapshot"));
     assert_eq!(screen.app, "flights");
     let field = screen.candidates[0].clone();
-    assert_eq!(field.ref_id, "seen:1");
+    assert_eq!(field.ref_id, "e1");
 
     let typed = surface.execute(
         JevOperation::TypeText,
@@ -56,8 +143,8 @@ fn sight_reads_the_page_and_its_refs_reach_their_marks() {
     );
     assert!(typed.ok, "{:?}", typed.error);
     let fill = fake.last("fill");
-    assert_eq!(fill["selector"], r#"[data-tc-seen="1"]"#, "{fill}");
-    assert_eq!(fake.last("focus")["selector"], r#"[data-tc-seen="1"]"#);
+    assert_eq!(fill["selector"], "@e1", "{fill}");
+    assert_eq!(fake.last("focus")["selector"], "@e1");
 
     // An unnamed link a card covers is still clicked through its card: its
     // mark names it exactly.
@@ -79,9 +166,17 @@ fn sight_reads_the_page_and_its_refs_reach_their_marks() {
         "{script}"
     );
 
-    surface.observe("", Some("seen:1"), Depth::Full).unwrap();
-    let scoped = fake.last("evaluate")["script"].as_str().unwrap().to_owned();
-    assert!(scoped.contains(r#"("[data-tc-seen=\"1\"]", {"#));
+    surface.observe("", Some("seen:2"), Depth::Full).unwrap();
+    let sent = fake.sent();
+    let scoped = sent
+        .iter()
+        .filter(|command| command["action"] == "evaluate")
+        .filter_map(|command| command["script"].as_str())
+        .find(|script| {
+            script.contains("__tinycomputerSeen") && script.contains("data-tc-seen=\\\"2\\\"")
+        })
+        .expect("the scoped Sight script uses the retained Sight ref");
+    assert!(scoped.contains(r#"("[data-tc-seen=\"2\"]", {"#), "{scoped}");
 }
 
 #[test]
@@ -162,6 +257,14 @@ fn shadowed_fake(shadows: serde_json::Value, subtree_fails: bool) -> Fake {
                 "e3": {"role": "button", "name": "Allow all"}
             }
         }))),
+        "snapshot" => Some(ok(&json!({
+            "snapshot": "- button \"Add To Cart\" [ref=e1]\n- button \"Allow Selection\" [ref=e2]\n- button \"Allow all\" [ref=e3]",
+            "refs": {
+                "e1": {"role": "button", "name": "Add To Cart"},
+                "e2": {"role": "button", "name": "Allow Selection"},
+                "e3": {"role": "button", "name": "Allow all"}
+            }
+        }))),
         _ => None,
     })
 }
@@ -187,7 +290,7 @@ fn a_shadow_roots_controls_are_read_by_the_tree_beside_sight() {
     assert_eq!(
         names,
         [
-            ("seen:1", "Add To Cart"),
+            ("e1", "Add To Cart"),
             ("e2", "Allow Selection"),
             ("e3", "Allow all")
         ]
@@ -208,7 +311,11 @@ fn a_shadow_roots_controls_are_read_by_the_tree_beside_sight() {
             .iter()
             .any(|line| line.contains("We value your privacy"))
     );
-    let subtree = fake.last("snapshot");
+    let sent = fake.sent();
+    let subtree = sent
+        .iter()
+        .find(|command| command["action"] == "snapshot" && command.get("selector").is_some())
+        .unwrap();
     assert_eq!(subtree["selector"], r#"[data-tc-seen="9"]"#, "{subtree}");
 
     // A shadow root that draws no layer keeps the tree's own places.

@@ -50,7 +50,7 @@ pub mod surface;
 
 pub use dates::{Date, date_pattern, parse_date, reformat_date};
 pub use error::{Error, Result};
-pub use facts::{Facts, is_sensitive_name};
+pub use facts::{Facts, SecretFactHandle, is_sensitive_name};
 pub use keymap::{Key, Platform};
 pub use records::{
     Criterion, Price, Record, closest_to, parse_clock, parse_duration, parse_price, parse_stops,

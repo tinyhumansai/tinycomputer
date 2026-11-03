@@ -62,7 +62,7 @@ fn a_press_still_covered_says_what_covers_it() {
     assert_eq!(
         cover_scripts(&fake),
         [format!(
-            r#"{COVER_JS}(60, 40, "[data-tc-seen=\"5\"]", false, {SPOT_GRID})"#
+            r#"{COVER_JS}(60, 40, "[data-tc-seen=\"5\"]", false, {SPOT_GRID}, false)"#
         )]
     );
     // The retry before it brought the target to the middle at once: a page
@@ -103,6 +103,23 @@ fn a_press_still_covered_says_what_covers_it() {
 }
 
 #[test]
+fn a_private_surface_requests_structurally_masked_cover_text() {
+    let Harness { fake, surface, .. } = harness(
+        "covered-named-private",
+        covering_fake(json!({"said": "an unnamed textbox", "bare": false, "spot": null})),
+    );
+    let surface = surface.without_form_values();
+    let _reply = surface.dismiss_cover(&basket());
+
+    assert_eq!(
+        cover_scripts(&fake),
+        [format!(
+            r#"{COVER_JS}(60, 40, "[data-tc-seen=\"5\"]", true, {SPOT_GRID}, true)"#
+        )]
+    );
+}
+
+#[test]
 fn an_empty_layer_is_pressed_where_nothing_lies_beneath_it() {
     let Harness { fake, surface, .. } = harness(
         "cover-pressed",
@@ -114,7 +131,7 @@ fn an_empty_layer_is_pressed_where_nothing_lies_beneath_it() {
     assert_eq!(
         cover_scripts(&fake),
         [format!(
-            r#"{COVER_JS}(60, 40, "[data-tc-seen=\"5\"]", true, {SPOT_GRID})"#
+            r#"{COVER_JS}(60, 40, "[data-tc-seen=\"5\"]", true, {SPOT_GRID}, false)"#
         )]
     );
     let pressed = fake
@@ -143,7 +160,9 @@ fn an_empty_layer_is_pressed_where_nothing_lies_beneath_it() {
         covering_fake(json!({"said": "an empty layer", "bare": true, "spot": [300.0, 450.0]})),
     );
     assert!(surface.dismiss_cover(&node("e9", &["Click"])).ok);
-    assert!(cover_scripts(&fake)[0].ends_with(&format!("(60, 40, null, true, {SPOT_GRID})")));
+    assert!(
+        cover_scripts(&fake)[0].ends_with(&format!("(60, 40, null, true, {SPOT_GRID}, false)"))
+    );
 }
 
 #[test]

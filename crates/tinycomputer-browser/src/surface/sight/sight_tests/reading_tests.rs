@@ -3,7 +3,18 @@
 
 use serde_json::json;
 
-use crate::surface::sight::{Denoised, denoised, is_seen, screen, script, selector};
+use crate::surface::sight::{
+    Denoised, denoised, is_seen, screen, script, script_without_form_values, selector,
+};
+
+#[test]
+fn private_sight_script_skips_form_content_descendants() {
+    let private = script_without_form_values(None);
+    let public = script(None);
+
+    assert!(private.contains("\"hideFormValues\":true"));
+    assert!(public.contains("\"hideFormValues\":false"));
+}
 
 /// A booking widget as sight reads it: a cookie dialog in front, a field
 /// named by the words above it, a city row a page marked `combobox`, and an
@@ -108,7 +119,7 @@ fn the_script_is_called_with_its_root_and_limits() {
     assert!(whole.contains("data-tc-seen"));
     assert!(
         whole.ends_with(
-            r#"(null, {"controls":800,"labels":3000,"name":120,"text":160,"texts":400})"#
+            r#"(null, {"controls":800,"hideFormValues":false,"labels":3000,"name":120,"text":160,"texts":400})"#
         )
     );
     let under = script(Some("seen:7"));

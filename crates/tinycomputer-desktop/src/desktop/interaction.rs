@@ -127,8 +127,7 @@ impl Desktop {
         self.run("type", Need::Accessibility, |adapter, context| {
             type_text::execute(
                 type_text::TypeArgs {
-                    ref_id: request.ref_id,
-                    snapshot_id: request.snapshot_id,
+                    ref_id: convert::qualified_ref(request.ref_id, request.snapshot_id.as_deref()),
                     text: request.text,
                     timeout_ms: request.timeout_ms,
                 },
@@ -161,8 +160,7 @@ impl Desktop {
         self.run("set-value", Need::Accessibility, |adapter, context| {
             set_value::execute(
                 set_value::SetValueArgs {
-                    ref_id: request.ref_id,
-                    snapshot_id: request.snapshot_id,
+                    ref_id: convert::qualified_ref(request.ref_id, request.snapshot_id.as_deref()),
                     value: request.value,
                     timeout_ms: request.timeout_ms,
                 },
@@ -191,8 +189,7 @@ impl Desktop {
         self.run("select", Need::Accessibility, |adapter, context| {
             select::execute(
                 select::SelectArgs {
-                    ref_id: request.ref_id,
-                    snapshot_id: request.snapshot_id,
+                    ref_id: convert::qualified_ref(request.ref_id, request.snapshot_id.as_deref()),
                     value: request.value,
                     timeout_ms: request.timeout_ms,
                 },
@@ -216,8 +213,7 @@ impl Desktop {
         self.run("scroll", Need::Accessibility, |adapter, context| {
             scroll::execute(
                 scroll::ScrollArgs {
-                    ref_id: request.ref_id,
-                    snapshot_id: request.snapshot_id,
+                    ref_id: convert::qualified_ref(request.ref_id, request.snapshot_id.as_deref()),
                     direction: convert::direction(request.direction),
                     amount: request.amount,
                     timeout_ms: request.timeout_ms,

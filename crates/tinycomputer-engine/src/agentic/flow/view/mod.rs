@@ -32,26 +32,51 @@ pub(in crate::agentic) fn is_banned(
     banned.contains(&signature(candidate)) || banned.contains(&press_key(candidate))
 }
 
+/// Words that commit to something wherever they sit in a label ("Post",
+/// "Transfer $500", "Log out"). Matched as whole words, so "Postcode" and
+/// "Design" stay pressable; "sign" counts unless it is signing in.
+const COMMITTING_WORDS: &[&str] = &[
+    "post",
+    "transfer",
+    "checkout",
+    "check out",
+    "log out",
+    "logout",
+    "sign",
+];
+
 /// Whether a lower-cased label names an action that is hard to undo. A
 /// counter's minus button ("remove adult") is not: it only lowers a number.
 pub(in crate::agentic) fn destructive_label(evidence: &str) -> bool {
+    let words = format!(
+        " {} ",
+        evidence
+            .split(|character: char| !character.is_alphanumeric())
+            .filter(|word| !word.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+    )
+    .replace(" sign in ", " ");
     !tinycomputer_core::adjusts_a_count(evidence)
-        && [
-            "delete",
-            "remove",
-            "send",
-            "purchase",
-            "buy",
-            "pay",
-            "submit",
-            "confirm",
-            "overwrite",
-            "quit without saving",
-            "empty trash",
-            "sign out",
-        ]
-        .iter()
-        .any(|term| evidence.contains(term))
+        && (COMMITTING_WORDS
+            .iter()
+            .any(|word| words.contains(&format!(" {word} ")))
+            || [
+                "delete",
+                "remove",
+                "send",
+                "purchase",
+                "buy",
+                "pay",
+                "submit",
+                "confirm",
+                "overwrite",
+                "quit without saving",
+                "empty trash",
+                "sign out",
+            ]
+            .iter()
+            .any(|term| evidence.contains(term)))
 }
 
 /// Whether `label` is named by a `stop_before` phrase the flow itself

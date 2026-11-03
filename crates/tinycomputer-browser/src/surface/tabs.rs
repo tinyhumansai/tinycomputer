@@ -120,6 +120,11 @@ impl BrowserSurface {
     /// (`SAME_TAB_JS`). Best effort: a page that refuses the script, or an
     /// element it cannot find, is pressed as it is.
     pub(super) fn keep_in_tab(&self, reference: &str) {
+        // Sight refs are CSS marks. A tree ref such as `e3` addresses the
+        // browser's own snapshot and cannot be resolved by document.querySelector.
+        if !sight::is_seen(reference) {
+            return;
+        }
         let selector = Value::String(sight::selector(reference));
         let script = format!("{SAME_TAB_JS}(document.querySelector({selector}))");
         if let Ok(id) = self.ensure_session() {

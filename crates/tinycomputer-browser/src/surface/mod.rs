@@ -27,8 +27,10 @@ mod watch;
 
 #[cfg(test)]
 pub(crate) use cover::{COVER_JS, SPOT_GRID};
+#[cfg(all(test, feature = "agent-browser"))]
+pub(crate) use uncover::CENTRE_JS;
 #[cfg(test)]
-pub(crate) use uncover::{CENTRE_JS, INTO_VIEW_JS};
+pub(crate) use uncover::INTO_VIEW_JS;
 
 pub use sight::Denoised;
 
@@ -44,6 +46,7 @@ use tinycomputer_core::Platform;
 use tinycomputer_core::surface::Screen;
 use tinycomputer_cursor::ScreenCursor;
 
+use crate::action_gate::ActionContext;
 use crate::error::{Error, Result};
 use crate::sessions::Browser;
 use envelope::reply;
@@ -127,11 +130,15 @@ const EARLY_LOAD_MS: u64 = 10_000;
 pub struct BrowserSurface {
     browser: Arc<Browser>,
     options: SessionOptions,
+    action_context: Arc<Mutex<ActionContext>>,
     session: Arc<Mutex<Option<SessionId>>>,
     handle: tokio::runtime::Handle,
     platform: Platform,
     cursor: Arc<ScreenCursor>,
     perception: Perception,
+    /// Keep values from editable form controls out of every task observation.
+    /// The private `SecretHost` can type and verify them through the host APIs.
+    hide_form_values: bool,
     settle: Settle,
     denoised: Arc<Mutex<Denoised>>,
     /// Set once the surface is let go ([`BrowserSurface::close`]): it is
@@ -170,11 +177,13 @@ impl BrowserSurface {
         Self {
             browser,
             options,
+            action_context: Arc::new(Mutex::new(ActionContext::default())),
             session: Arc::new(Mutex::new(None)),
             handle,
             platform: Platform::current(),
             cursor: Arc::new(ScreenCursor::off()),
             perception: Perception::default(),
+            hide_form_values: false,
             settle: Settle::default(),
             denoised: Arc::new(Mutex::new(Denoised::default())),
             closed: Arc::new(AtomicBool::new(false)),
@@ -190,11 +199,50 @@ impl BrowserSurface {
         self
     }
 
+    /// Supplies the task facts included in each host action-gate request.
+    #[must_use]
+    pub fn with_action_context(mut self, context: ActionContext) -> Self {
+        self.action_context = Arc::new(Mutex::new(context));
+        self
+    }
+
+    /// Updates the gate context on this retained session, if it is already
+    /// open, and on any future session opened by this surface.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the current session is unavailable or either
+    /// the surface or session state is poisoned.
+    pub async fn update_action_context(&self, mut context: ActionContext) -> Result<()> {
+        let id = self.session();
+        if let Some(id) = id {
+            context.session_id = Some(id.to_string());
+            self.browser
+                .update_action_context(&id, context.clone())
+                .await?;
+        }
+        *self
+            .action_context
+            .lock()
+            .map_err(|_| Error::failed("the browser surface context was poisoned by a panic"))? =
+            context;
+        Ok(())
+    }
+
     /// The same surface, reading pages with `perception`
     /// ([`Perception::Sight`] unless told otherwise).
     #[must_use]
     pub fn with_perception(mut self, perception: Perception) -> Self {
         self.perception = perception;
+        self
+    }
+
+    /// Hides values held by editable form controls from observations while
+    /// retaining their labels, roles, states, and refs. Host-side reads and
+    /// secret-fill verification continue to use the live control value.
+    #[must_use]
+    pub fn without_form_values(mut self) -> Self {
+        self.hide_form_values = true;
         self
     }
 
@@ -306,7 +354,15 @@ impl BrowserSurface {
         if early && self.closed.load(Ordering::Acquire) {
             return Err(Error::failed("the browser surface was let go"));
         }
-        let info = self.block(self.browser.open_session(self.options.clone()))?;
+        let context = self
+            .action_context
+            .lock()
+            .map_err(|_| Error::failed("the browser surface context was poisoned by a panic"))?
+            .clone();
+        let info = self.block(
+            self.browser
+                .open_session_with_context(self.options.clone(), context),
+        )?;
         *slot = Some(info.id.clone());
         Ok(info.id)
     }
@@ -317,11 +373,13 @@ impl BrowserSurface {
     fn see(&self, root: Option<&str>) -> Option<Screen> {
         self.keep_denoised(Denoised::default());
         let id = self.ensure_session().ok()?;
+        let script = if self.hide_form_values {
+            sight::script_without_form_values(root)
+        } else {
+            sight::script(root)
+        };
         // The timer is made inside the runtime `block` enters, not before.
-        let reading = self.browser.command(
-            &id,
-            json!({"action": "evaluate", "script": sight::script(root)}),
-        );
+        let reading = self.browser.observe_sight(&id, script);
         let reply = self
             .block(async { tokio::time::timeout(READ_TIMEOUT, reading).await })
             .ok()?
@@ -335,6 +393,15 @@ impl BrowserSurface {
             // subtree can be read beside sight, not two.
             _ => return None,
         }
+        // Shadow reads may refresh the browser's native refs, so map Sight
+        // controls only after the last such read, against the exact snapshot
+        // generation that will be used by the next action.
+        let snapshot = self
+            .block(self.browser.snapshot(&id, SnapshotRequest::default()))
+            .ok()?;
+        screen
+            .candidates
+            .retain_mut(|candidate| attach_unique_snapshot_ref(candidate, &snapshot.refs));
         self.keep_denoised(sight::denoised(result));
         Some(screen)
     }
@@ -401,6 +468,35 @@ impl BrowserSurface {
         });
         reply(command, outcome)
     }
+}
+
+/// Resolve every native ref against the final accessibility snapshot, since
+/// an intervening shadow read may have reassigned its `eN` identifiers. Sight
+/// selectors remain available for hosts that support them, but are replaced
+/// by a native ref only when the snapshot has one exact role/name match.
+fn attach_unique_snapshot_ref(
+    candidate: &mut tinycomputer_core::surface::Candidate,
+    refs: &[tinycomputer_bus::browser::ElementRef],
+) -> bool {
+    candidate
+        .children
+        .retain_mut(|child| attach_unique_snapshot_ref(child, refs));
+    let Some(name) = candidate.name.as_deref().filter(|name| !name.is_empty()) else {
+        return sight::is_seen(&candidate.ref_id);
+    };
+    let mut matches = refs
+        .iter()
+        .filter(|item| item.role == candidate.role && item.name.as_str() == name);
+    let Some(found) = matches.next() else {
+        // Sight refs are selector-backed and remain governed by the host's
+        // existing policy. Native refs must never survive a missing match.
+        return sight::is_seen(&candidate.ref_id);
+    };
+    if matches.next().is_some() {
+        return sight::is_seen(&candidate.ref_id);
+    }
+    candidate.ref_id.clone_from(&found.id);
+    true
 }
 
 #[cfg(test)]

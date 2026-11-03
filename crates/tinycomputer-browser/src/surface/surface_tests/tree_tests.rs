@@ -4,7 +4,7 @@
 use serde_json::json;
 
 use super::PAGE;
-use crate::surface::tree::{parse_line, screen};
+use crate::surface::tree::{parse_line, screen, screen_without_form_values};
 
 #[test]
 fn a_line_parses_its_role_name_attributes_and_value() {
@@ -101,6 +101,107 @@ fn dialogs_are_the_surface_in_front() {
     let capped = screen(&long, "");
     assert_eq!(capped.context[0].chars().count(), 160);
     assert_eq!(capped.context.len(), 2, "duplicates are kept once");
+}
+
+#[test]
+fn unreferenced_editable_values_do_not_become_shared_context() {
+    let parsed = screen(
+        "- heading \"Checkout\"\n- spinbutton: restored-control-value\n- text: Payment is ready\n",
+        "Shop",
+    );
+
+    assert_eq!(parsed.context, ["Checkout", "Payment is ready"]);
+    assert!(parsed.text_nodes.iter().any(|node| {
+        node.role == "spinbutton"
+            && node
+                .value
+                .as_ref()
+                .is_some_and(|value| value == "restored-control-value")
+    }));
+}
+
+#[test]
+fn private_tree_observations_hide_document_descendants_and_toggle_values() {
+    const UNKNOWN: &str = "profile-autofill-unknown-7Qz9";
+    let tree = format!(
+        r#"- heading "Checkout"
+- group
+  - document [ref=e1]: {UNKNOWN}
+    - text: {UNKNOWN} document body
+    - text "{UNKNOWN} named document body"
+    - generic "{UNKNOWN} ancestor label"
+      - button "{UNKNOWN} action" [ref=e5]
+  - menuitemcheckbox [ref=e2]: {UNKNOWN}
+    - text: {UNKNOWN} checkbox echo
+  - menuitemradio [ref=e3]: {UNKNOWN}
+    - text: {UNKNOWN} radio echo
+  - textbox "Email" [ref=e4]: {UNKNOWN}
+- text: Order total is $12.50
+"#
+    );
+
+    let private = screen_without_form_values(&tree, "Checkout");
+    let model_view = private
+        .context
+        .iter()
+        .cloned()
+        .chain(
+            private
+                .candidates
+                .iter()
+                .chain(&private.text_nodes)
+                .map(|node| tinycomputer_core::surface::describe(node, true).to_string()),
+        )
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(
+        !model_view.contains(UNKNOWN),
+        "serialized candidate descriptions contain restored field text"
+    );
+    assert!(model_view.contains("Email"));
+    assert!(model_view.contains("Order total is $12.50"));
+    assert_eq!(private.candidates[0].role, "document");
+    assert_eq!(private.candidates[0].value, None);
+    assert_eq!(private.candidates[1].role, "menuitemcheckbox");
+    assert_eq!(private.candidates[1].value, None);
+    assert_eq!(private.candidates[2].role, "menuitemradio");
+    assert_eq!(private.candidates[2].value, None);
+    assert!(private.candidates[3].value.is_none());
+    assert!(private.candidates.iter().all(|node| node.ref_id != "e5"));
+    assert!(private.candidates[0].description.is_none());
+    assert!(private.text_nodes.iter().all(|node| {
+        node.value
+            .as_ref()
+            .is_none_or(|value| !value.to_string().contains(UNKNOWN))
+    }));
+
+    // The non-private surface keeps the normal tree's existing value
+    // behavior; the masking is enabled only for a host with SecretHost.
+    let public = screen(&tree, "Checkout");
+    assert_eq!(public.candidates[0].value.as_ref(), Some(&json!(UNKNOWN)));
+    assert!(
+        public
+            .text_nodes
+            .iter()
+            .any(|node| node.value.as_ref() == Some(&json!(format!("{UNKNOWN} document body"))))
+    );
+    assert!(
+        public
+            .text_nodes
+            .iter()
+            .any(|node| node.name.as_deref() == Some(&format!("{UNKNOWN} named document body")))
+    );
+    assert!(
+        public.candidates.iter().any(|node| node.ref_id == "e5"
+            && node.name.as_deref() == Some(&format!("{UNKNOWN} action")))
+    );
+    assert!(
+        public
+            .context
+            .iter()
+            .any(|line| line == "Order total is $12.50")
+    );
 }
 
 #[test]

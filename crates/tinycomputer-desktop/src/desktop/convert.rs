@@ -130,10 +130,24 @@ pub(super) fn path(value: Option<String>) -> Option<PathBuf> {
 /// Converts a contract ref action payload into the engine's shared arguments.
 pub(super) fn ref_args(request: bus::RefRequest) -> core::commands::helpers::RefArgs {
     core::commands::helpers::RefArgs {
-        ref_id: request.ref_id,
-        snapshot_id: request.snapshot_id,
+        ref_id: qualified_ref(request.ref_id, request.snapshot_id.as_deref()),
         timeout_ms: request.timeout_ms,
     }
+}
+
+/// Adds a separate snapshot id to a bare local ref while preserving refs that
+/// already carry their snapshot in the engine's canonical wire form.
+pub(super) fn qualified_ref(ref_id: String, snapshot_id: Option<&str>) -> String {
+    let Some(snapshot_id) = snapshot_id else {
+        return ref_id;
+    };
+    let Some(element_number) = ref_id.strip_prefix("@e") else {
+        return ref_id;
+    };
+    if element_number.is_empty() || !element_number.chars().all(|digit| digit.is_ascii_digit()) {
+        return ref_id;
+    }
+    format!("@{snapshot_id}:e{element_number}")
 }
 
 /// Converts a contract window target into the engine's.
@@ -150,9 +164,14 @@ pub(super) fn window_args(request: bus::WindowRequest) -> core::commands::helper
 /// A half-specified point — an `x` with no `y` — becomes no point at all, and
 /// the engine reports the missing input by name. Guessing a zero for the other
 /// half would drag to the corner of the screen.
-pub(super) fn drag_endpoint(endpoint: bus::DragEndpoint) -> core::commands::drag::DragEndpoint {
+pub(super) fn drag_endpoint(
+    endpoint: bus::DragEndpoint,
+    snapshot_id: Option<&str>,
+) -> core::commands::drag::DragEndpoint {
     core::commands::drag::DragEndpoint {
-        ref_id: endpoint.ref_id,
+        ref_id: endpoint
+            .ref_id
+            .map(|ref_id| qualified_ref(ref_id, snapshot_id)),
         xy: point(endpoint.x, endpoint.y),
     }
 }

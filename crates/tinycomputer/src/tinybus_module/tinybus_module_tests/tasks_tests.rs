@@ -8,6 +8,21 @@ use tinybus::transport::memory::MemoryBus;
 use tinybus::{Connection, Interface};
 use tinycomputer_bus::names;
 
+#[derive(Default)]
+struct CaptureActionContext(std::sync::Mutex<Vec<tinycomputer_browser::ActionContext>>);
+
+impl tinycomputer_browser::ActionGate for CaptureActionContext {
+    fn check(
+        &self,
+        request: &tinycomputer_browser::ActionRequest,
+    ) -> tinycomputer_browser::ActionVerdict {
+        if let Ok(mut contexts) = self.0.lock() {
+            contexts.push(request.context.clone());
+        }
+        tinycomputer_browser::ActionVerdict::Allow
+    }
+}
+
 #[tokio::test]
 async fn the_ordinary_task_members_answer_over_a_real_bus() -> tinybus::Result<()> {
     use tinycomputer_bus::agent::{AgentResponse, Capabilities, TaskView};
@@ -359,16 +374,20 @@ async fn the_runner_loads_the_page_a_browser_task_names_in_its_early_browser() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_task_browser_launches_with_its_own_binary_and_profile_and_checks_pages_itself() {
-    use tinycomputer_bus::agent::{SurfaceKind, TaskConstraints, TaskId};
+    use tinycomputer_bus::agent::{PaymentMode, SurfaceKind, TaskConstraints, TaskId};
     use tinycomputer_engine::FlowRunner;
 
     let scratch =
         std::env::temp_dir().join(format!("tinycomputer-runner-launch-{}", std::process::id()));
     let sent = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let browser = std::sync::Arc::new(tinycomputer_browser::Browser::with_scratch(
-        std::sync::Arc::new(super::browser_tests::ScriptedLauncher(sent.clone())),
-        scratch.clone(),
-    ));
+    let contexts = std::sync::Arc::new(CaptureActionContext::default());
+    let browser = std::sync::Arc::new(
+        tinycomputer_browser::Browser::with_scratch(
+            std::sync::Arc::new(super::browser_tests::ScriptedLauncher(sent.clone())),
+            scratch.clone(),
+        )
+        .with_action_gate(contexts.clone()),
+    );
     let runner =
         crate::tinybus_module::runner::WorkspaceRunner::new(crate::Desktop::new(), None, browser);
     let task = TaskId::new("t-1");
@@ -378,6 +397,7 @@ async fn a_task_browser_launches_with_its_own_binary_and_profile_and_checks_page
             &TaskConstraints {
                 surfaces: vec![SurfaceKind::Browser],
                 origins: vec!["https://.example.com".to_owned()],
+                payment: PaymentMode::FillThenApprove,
                 browser_executable: Some("/opt/chrome/chrome".to_owned()),
                 browser_profile: Some("/Users/asha/.openhuman/chrome".to_owned()),
                 ..TaskConstraints::default()
@@ -406,6 +426,15 @@ async fn a_task_browser_launches_with_its_own_binary_and_profile_and_checks_page
         navigated,
         [json!("https://www.example.com/")],
         "a page outside the origins is refused before the browser is asked"
+    );
+    let supplied_context = contexts.0.lock().is_ok_and(|contexts| {
+        contexts.iter().any(|context| {
+            context.task_id.as_deref() == Some(task.0.as_str()) && context.payment_in_play
+        })
+    });
+    assert!(
+        supplied_context,
+        "task id and payment mode reach the browser gate"
     );
     runner.release(&task);
     let _ = std::fs::remove_dir_all(&scratch);

@@ -101,8 +101,9 @@ impl Desktop {
         self.run("hover", Need::Accessibility, |adapter, context| {
             hover::execute(
                 hover::HoverArgs {
-                    ref_id: request.ref_id,
-                    snapshot_id: request.snapshot_id,
+                    ref_id: request.ref_id.map(|ref_id| {
+                        convert::qualified_ref(ref_id, request.snapshot_id.as_deref())
+                    }),
                     xy: convert::point(request.x, request.y),
                     duration_ms: request.duration_ms,
                     timeout_ms: request.timeout_ms,
@@ -132,9 +133,8 @@ impl Desktop {
         self.run("drag", Need::Accessibility, |adapter, context| {
             drag::execute(
                 drag::DragArgs {
-                    from: convert::drag_endpoint(request.from),
-                    to: convert::drag_endpoint(request.to),
-                    snapshot_id: request.snapshot_id,
+                    from: convert::drag_endpoint(request.from, request.snapshot_id.as_deref()),
+                    to: convert::drag_endpoint(request.to, request.snapshot_id.as_deref()),
                     duration_ms: request.duration_ms,
                     drop_delay_ms: request.drop_delay_ms,
                     timeout_ms: request.timeout_ms,

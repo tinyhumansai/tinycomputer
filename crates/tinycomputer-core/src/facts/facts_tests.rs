@@ -3,7 +3,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use super::{Facts, is_sensitive_name};
+use super::{Facts, SecretFactHandle, is_sensitive_name};
 use crate::error::Error;
 
 fn traveller() -> Facts {
@@ -123,6 +123,88 @@ fn merged_facts_keep_every_secret() {
     let merged = first.merged(&second);
     assert_eq!(merged.get("code"), Some("9900"));
     assert!(merged.is_secret("code") && !merged.is_secret("email"));
+}
+
+#[test]
+fn host_handles_are_secret_names_without_values() {
+    let facts = Facts::with_handles(
+        [("email", "person@example.test")],
+        [(
+            "card number",
+            SecretFactHandle {
+                handle: "vault-card-1".to_owned(),
+                mask: "•••• 4242".to_owned(),
+                kind: "payment_card".to_owned(),
+            },
+        )],
+        std::iter::empty::<&str>(),
+    )
+    .unwrap();
+
+    assert_eq!(facts.get("card number"), None);
+    assert_eq!(facts.handle("card number").unwrap().handle, "vault-card-1");
+    assert!(facts.is_secret("card number"));
+    assert_eq!(
+        facts.shared().collect::<Vec<_>>(),
+        [("email", "person@example.test")]
+    );
+    assert_eq!(
+        facts.mask("use vault-card-1 or 4242"),
+        "use vault-card-1 or 4242"
+    );
+}
+
+#[test]
+fn host_handle_conflicts_and_empty_ids_are_refused() {
+    let handle = SecretFactHandle {
+        handle: "handle-1".to_owned(),
+        mask: "••••".to_owned(),
+        kind: "payment_card".to_owned(),
+    };
+    assert!(matches!(
+        Facts::with_handles(
+            [("card number", "4111")],
+            [("card number", handle.clone())],
+            std::iter::empty::<&str>(),
+        ),
+        Err(crate::Error::DuplicateFact { .. })
+    ));
+    assert!(matches!(
+        Facts::with_handles(
+            std::iter::empty::<(&str, &str)>(),
+            [(
+                "card number",
+                SecretFactHandle {
+                    handle: String::new(),
+                    ..handle
+                }
+            )],
+            std::iter::empty::<&str>(),
+        ),
+        Err(crate::Error::EmptyFactHandle { .. })
+    ));
+}
+
+#[test]
+fn merging_caller_input_cannot_replace_a_host_held_value() {
+    let held = Facts::with_handles(
+        std::iter::empty::<(&str, &str)>(),
+        [(
+            "card number",
+            SecretFactHandle {
+                handle: "vault-card-1".to_owned(),
+                mask: "•••• 1111".to_owned(),
+                kind: "payment_card".to_owned(),
+            },
+        )],
+        std::iter::empty::<&str>(),
+    )
+    .unwrap();
+    let supplied = Facts::new([("card number", "4111 1111 1111 1111")]);
+    let merged = held.merged(&supplied);
+
+    assert_eq!(merged.get("card number"), None);
+    assert_eq!(merged.handle("card number").unwrap().handle, "vault-card-1");
 }
 
 #[test]

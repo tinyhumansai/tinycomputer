@@ -217,6 +217,19 @@ impl<B: AgentBackend + Sync> FlowRun<'_, B> {
         before: &Screen,
         private: bool,
     ) -> Result<bool, Halt> {
+        let handle_names = crate::agentic::flow::validate::references(&slot.text)
+            .into_iter()
+            .filter(|name| self.fact_handles.contains_key(name))
+            .collect::<Vec<_>>();
+        if !handle_names.is_empty() {
+            if handle_names.len() != 1 || slot.text != format!("${{{}}}", handle_names[0]) {
+                return Err(Halt::Failed(
+                    "a host secret must occupy the entire field value".to_owned(),
+                ));
+            }
+            self.type_handle(log, &handle_names[0], field).await?;
+            return Ok(true);
+        }
         let app = self.app.clone();
         let target = field.clone();
         let hints = [field.name.as_deref(), field.description.as_deref()]

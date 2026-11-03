@@ -17,7 +17,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use tinybus::Connection;
-use tinycomputer_bus::agent::ContinueTaskRequest;
+use tinycomputer_bus::agent::{ContinueTaskRequest, HostContext};
 use tinycomputer_bus::consequence_host::{
     ConsequenceKind, INTERFACE, OBJECT_PATH, ReviewActionRequest, ReviewActionResponse, methods,
 };
@@ -26,8 +26,9 @@ use tinycomputer_core::{Consequence, consequence};
 /// The deadline for one call to the host.
 const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// The bus errors that mean the host does not serve the interface at all,
-/// rather than serving it and failing.
+/// The bus errors that identify a missing service on the legacy well-known
+/// lookup. An explicitly configured destination is expected to be served and
+/// every failure from it denies the action.
 const NOT_SERVED: [&str; 3] = [
     "ai.tinyhumans.tinybus.Error.NameHasNoOwner",
     "ai.tinyhumans.tinybus.Error.UnknownObject",
@@ -56,6 +57,7 @@ pub(crate) trait ConsequencePort: Send + Sync + std::fmt::Debug {
 #[derive(Clone)]
 pub(crate) struct BusPort {
     connection: Connection,
+    destination: Option<tinybus::BusName>,
 }
 
 impl std::fmt::Debug for BusPort {
@@ -65,31 +67,49 @@ impl std::fmt::Debug for BusPort {
 }
 
 impl BusPort {
-    pub(crate) fn new(connection: Connection) -> Self {
-        Self { connection }
+    pub(crate) fn new(connection: Connection, destination: Option<tinybus::BusName>) -> Self {
+        Self {
+            connection,
+            destination,
+        }
+    }
+
+    fn classify_error(configured_destination: bool, error: &tinybus::Error) -> PortError {
+        if !configured_destination && NOT_SERVED.contains(&error.wire_name()) {
+            PortError::NotServed
+        } else {
+            PortError::Failed(error.to_string())
+        }
     }
 }
 
 impl ConsequencePort for BusPort {
     fn review(&self, request: ReviewActionRequest) -> PortFuture<'_, ReviewActionResponse> {
+        if request.host_context.is_some() && self.destination.is_none() {
+            return Box::pin(async {
+                Err(PortError::Failed(
+                    "host context requires a confidential host callback".to_owned(),
+                ))
+            });
+        }
         Box::pin(async move {
             let proxy = self
                 .connection
-                .proxy(INTERFACE, OBJECT_PATH, INTERFACE)
+                .proxy(
+                    self.destination
+                        .as_ref()
+                        .map_or(INTERFACE, tinybus::BusName::as_str),
+                    OBJECT_PATH,
+                    INTERFACE,
+                )
                 .map(|proxy| proxy.with_timeout(CALL_TIMEOUT))
                 .map_err(|error| PortError::Failed(error.to_string()))?;
-            proxy
-                .call(methods::REVIEW, (request,))
-                .await
-                .map_err(|error| {
-                    // Across the bus an error keeps its dotted name, not its
-                    // variant, so the name is what says nobody serves this.
-                    if NOT_SERVED.contains(&error.wire_name()) {
-                        PortError::NotServed
-                    } else {
-                        PortError::Failed(error.to_string())
-                    }
-                })
+            let reply = if self.destination.is_some() {
+                proxy.call_confidential(methods::REVIEW, (request,)).await
+            } else {
+                proxy.call(methods::REVIEW, (request,)).await
+            };
+            reply.map_err(|error| Self::classify_error(self.destination.is_some(), &error))
         })
     }
 }
@@ -134,7 +154,7 @@ impl ConsequenceLink {
         task: &str,
         action: &str,
         target: &str,
-        host_context: Option<tinycomputer_bus::agent::HostContext>,
+        host_context: Option<HostContext>,
     ) -> Verdict {
         let kind = kind_of(action, target);
         let request = ReviewActionRequest {

@@ -73,6 +73,11 @@ mod desktop;
 mod error;
 mod surface;
 
+pub use agent_desktop_core::{
+    AppError as TraceSinkError, Deadline as TraceSinkDeadline, TraceArtifact as TraceSinkArtifact,
+    TraceArtifactKind as TraceSinkArtifactKind, TraceArtifactLimits as TraceSinkArtifactLimits,
+    TraceSink,
+};
 pub use desktop::Desktop;
 pub use error::{Error, Result};
 pub use tinycomputer_bus;

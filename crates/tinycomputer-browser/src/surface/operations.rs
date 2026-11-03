@@ -48,6 +48,9 @@ impl Surface for BrowserSurface {
             if !app.is_empty() {
                 app.clone_into(&mut screen.app);
             }
+            if self.hide_form_values {
+                hide_form_values(&mut screen);
+            }
             return Ok(screen);
         }
         let request = SnapshotRequest {
@@ -68,7 +71,11 @@ impl Surface for BrowserSurface {
                     })
             })
             .map_err(|error| Box::new(failure("snapshot", &error)))?;
-        let mut screen = tree::screen(&snapshot.tree, &snapshot.title);
+        let mut screen = if self.hide_form_values {
+            tree::screen_without_form_values(&snapshot.tree, &snapshot.title)
+        } else {
+            tree::screen(&snapshot.tree, &snapshot.title)
+        };
         if !app.is_empty() {
             app.clone_into(&mut screen.app);
         }
@@ -171,6 +178,17 @@ impl Surface for BrowserSurface {
                 DesktopResponse::ok("resolve-intent", json!({}))
             }
         }
+    }
+
+    fn authorize_secret_type(&self, target: &Candidate) -> Result<String, String> {
+        let id = self.ensure_session().map_err(|error| error.to_string())?;
+        self.block(self.browser.authorize_secret_type(
+            &id,
+            &target.role,
+            target.name.as_deref(),
+            &target.ref_id,
+        ))
+        .map_err(|error| error.to_string())
     }
 
     fn read_value(&self, target: &Candidate) -> Option<String> {
@@ -295,10 +313,9 @@ impl Surface for BrowserSurface {
         let Some(id) = self.session() else {
             return true;
         };
-        let watching = self.browser.command(
-            &id,
-            json!({"action": "evaluate", "script": watch::change_script(ms)}),
-        );
+        let watching = self
+            .browser
+            .observe_page_stability(&id, watch::change_script(ms));
         self.block(async { tokio::time::timeout(watch::deadline(ms), watching).await })
             .ok()
             .and_then(Result::ok)
@@ -328,6 +345,38 @@ impl Surface for BrowserSurface {
 
     fn dismiss_cover(&self, target: &Candidate) -> DesktopResponse {
         self.press_cover(&target.ref_id)
+    }
+}
+
+/// Removes editable control values from the screen returned to all task
+/// models. The candidate's live ref, role, labels, state and actions remain,
+/// and `Surface::read_value` still obtains the value directly for host-side
+/// checks.
+fn hide_form_values(screen: &mut Screen) {
+    fn hide(candidate: &mut Candidate) {
+        let editable = candidate
+            .available_actions
+            .iter()
+            .any(|action| matches!(action.as_str(), "SetValue" | "TypeText"))
+            || matches!(
+                candidate.role.as_str(),
+                "textbox" | "searchbox" | "combobox" | "textarea" | "spinbutton"
+            )
+            || tree::is_form_role(&candidate.role);
+        if editable {
+            candidate.value = None;
+        }
+        for child in &mut candidate.children {
+            hide(child);
+        }
+    }
+
+    for candidate in screen
+        .candidates
+        .iter_mut()
+        .chain(screen.text_nodes.iter_mut())
+    {
+        hide(candidate);
     }
 }
 
@@ -362,10 +411,9 @@ impl BrowserSurface {
     /// a deadline: a call sent while a page is being replaced can wait out
     /// the browser's own 30 s.
     fn await_still(&self, id: &SessionId) {
-        let still = self.browser.command(
-            id,
-            json!({"action": "evaluate", "script": watch::still_script()}),
-        );
+        let still = self
+            .browser
+            .observe_page_stability(id, watch::still_script());
         let _still =
             self.block(async { tokio::time::timeout(watch::deadline(SETTLE_MS), still).await });
     }
@@ -432,4 +480,48 @@ pub(crate) fn browser_key(combo: &str, platform: Platform) -> String {
         })
         .collect::<Vec<_>>()
         .join("+")
+}
+
+#[cfg(test)]
+mod private_value_tests {
+    use serde_json::json;
+    use tinycomputer_core::surface::{Candidate, Screen};
+
+    use super::hide_form_values;
+
+    #[test]
+    fn private_observations_hide_editable_values_and_keep_useful_structure() {
+        let mut screen = Screen {
+            app: "browser".into(),
+            window: None,
+            surface: "window".into(),
+            candidates: vec![Candidate {
+                ref_id: "field-1".into(),
+                role: "textbox".into(),
+                name: Some("Address".into()),
+                value: Some(json!("restored form content")),
+                available_actions: vec!["Click".into(), "SetValue".into()],
+                ..Candidate::default()
+            }],
+            context: vec!["A lamp is ready to buy.".into()],
+            unexplored: Vec::new(),
+            text_nodes: vec![Candidate {
+                ref_id: "rich-field".into(),
+                role: "document".into(),
+                name: Some("Message body".into()),
+                value: Some(json!("restored rich text")),
+                available_actions: vec!["SetValue".into()],
+                ..Candidate::default()
+            }],
+        };
+
+        hide_form_values(&mut screen);
+
+        assert_eq!(screen.candidates[0].value, None);
+        assert_eq!(screen.candidates[0].name.as_deref(), Some("Address"));
+        assert_eq!(screen.candidates[0].ref_id, "field-1");
+        assert_eq!(screen.text_nodes[0].value, None);
+        assert_eq!(screen.text_nodes[0].name.as_deref(), Some("Message body"));
+        assert_eq!(screen.context, ["A lamp is ready to buy."]);
+    }
 }

@@ -140,7 +140,9 @@ async fn main() -> Result<(), LabError> {
         .start_task(&StartTaskRequest {
             task: Some(task.clone()),
             flow,
+            handoff_to_planner: false,
             facts,
+            fact_handles: BTreeMap::new(),
             secret_facts,
             constraints: TaskConstraints {
                 surfaces: vec![kind],

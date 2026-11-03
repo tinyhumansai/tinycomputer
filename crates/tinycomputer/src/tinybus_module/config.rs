@@ -30,7 +30,7 @@ pub(crate) struct BrowserDefaults {
     /// drafted (the default), at the one web address the task's text names
     /// if it names one, rather than at its first step.
     pub(crate) prelaunch: bool,
-    /// Private host selected scope for enforcing browser socket egress.
+    /// Immutable `TinySecurity` scope captured from host-private configuration.
     pub(crate) egress: Option<BrowserEgressConfig>,
 }
 
@@ -115,9 +115,9 @@ impl BrowserDefaults {
             .filter(|generation| *generation > 0)
             .ok_or_else(invalid)?;
         if object.len() != 2
-            || browser
-                .as_object()
-                .is_some_and(|browser| browser.contains_key("args"))
+            || browser.as_object().is_some_and(|browser| {
+                browser.contains_key("args") || browser.contains_key("executable")
+            })
         {
             return Err(invalid());
         }
@@ -143,6 +143,92 @@ impl BrowserDefaults {
             options.user_agent.clone_from(&self.user_agent);
         }
         options
+    }
+}
+
+/// Whether the host explicitly selected the trace/report callback.
+pub(crate) fn trace_sink_destination(
+    config: &serde_json::Value,
+) -> Result<Option<tinybus::BusName>> {
+    match config
+        .as_object()
+        .and_then(|object| object.get("trace_sink"))
+    {
+        None | Some(serde_json::Value::Bool(false)) => Ok(None),
+        Some(serde_json::Value::Bool(true)) => Err(crate::Error::ConfigFieldType {
+            field: "trace_sink",
+            expected: "an object with the trusted host callback `destination`",
+        }),
+        Some(serde_json::Value::Object(options)) => {
+            if options.len() != 1 {
+                return Err(crate::Error::ConfigFieldType {
+                    field: "trace_sink",
+                    expected: "an object containing only the trusted host callback `destination`",
+                });
+            }
+            let destination = options
+                .get("destination")
+                .and_then(serde_json::Value::as_str)
+                .ok_or(crate::Error::ConfigFieldType {
+                    field: "trace_sink.destination",
+                    expected: "the unique name of the host callback prepared for this module",
+                })?;
+            tinybus::BusName::new(destination.to_owned())
+                .map_err(|_| crate::Error::ConfigFieldType {
+                    field: "trace_sink.destination",
+                    expected: "the unique name of the host callback prepared for this module",
+                })
+                .and_then(|name| {
+                    name.is_unique()
+                        .then_some(Some(name))
+                        .ok_or(crate::Error::ConfigFieldType {
+                            field: "trace_sink.destination",
+                            expected: "the unique name of the host callback prepared for this module",
+                        })
+                })
+        }
+        Some(_) => Err(crate::Error::ConfigFieldType {
+            field: "trace_sink",
+            expected: "false or an object with the trusted host callback `destination`",
+        }),
+    }
+}
+
+/// Whether the host prepared a confidential consequence-review callback.
+pub(crate) fn consequence_host_destination(
+    config: &serde_json::Value,
+) -> Result<Option<tinybus::BusName>> {
+    match config
+        .as_object()
+        .and_then(|object| object.get("consequence_host"))
+    {
+        None | Some(serde_json::Value::Bool(false)) => Ok(None),
+        Some(serde_json::Value::Object(options)) if options.len() == 1 => {
+            let destination = options
+                .get("destination")
+                .and_then(serde_json::Value::as_str)
+                .ok_or(crate::Error::ConfigFieldType {
+                    field: "consequence_host.destination",
+                    expected: "the unique name of the host callback prepared for this module",
+                })?;
+            tinybus::BusName::new(destination.to_owned())
+                .map_err(|_| crate::Error::ConfigFieldType {
+                    field: "consequence_host.destination",
+                    expected: "the unique name of the host callback prepared for this module",
+                })
+                .and_then(|name| {
+                    name.is_unique()
+                        .then_some(Some(name))
+                        .ok_or(crate::Error::ConfigFieldType {
+                            field: "consequence_host.destination",
+                            expected: "the unique name of the host callback prepared for this module",
+                        })
+                })
+        }
+        Some(_) => Err(crate::Error::ConfigFieldType {
+            field: "consequence_host",
+            expected: "false or an object containing only the host callback `destination`",
+        }),
     }
 }
 

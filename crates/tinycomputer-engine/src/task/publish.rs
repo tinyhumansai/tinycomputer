@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use tinycomputer_bus::agent::{InputField, StepView, TaskStatus};
+use tinycomputer_bus::agent::{InputField, StepView, TaskStatus, TaskUsage};
 
 use super::interpret;
 use super::names::input_kind;
@@ -25,43 +25,53 @@ pub(super) fn stopped_summary(status: &TaskStatus) -> String {
 
 /// Updates a task's view: status, summary, progress, step, and next calls.
 pub(super) fn publish(cell: &Cell, status: TaskStatus, summary: &str) {
+    let terminal = status.is_final();
     let waits = matches!(
         status,
         TaskStatus::NeedsInput { .. }
             | TaskStatus::NeedsApproval { .. }
             | TaskStatus::NeedsHuman { .. }
     );
-    let (progress, step) = cell.state.lock().map_or((0.0, None), |mut state| {
-        // The wait starts when the task first asks; publishing the same
-        // pause again does not restart it.
-        state.waiting_since = if waits {
-            state
-                .waiting_since
-                .or_else(|| Some(std::time::Instant::now()))
-        } else {
-            None
-        };
-        let total = state.flow.steps.len().max(1);
-        let fraction = |count: usize| f32::from(u16::try_from(count).unwrap_or(u16::MAX));
-        let progress = fraction(state.finished.min(total)) / fraction(total);
-        let step = state.steps.last().map(|report| StepView {
-            index: interpret::top_index(report.path.split('.').next().unwrap_or("1")).unwrap_or(0),
-            total: state.flow.steps.len(),
-            kind: report.kind.clone(),
-            intent: state.facts.redact(&report.text),
-            surface: interpret::app_at(
-                &state.flow,
-                interpret::top_index(report.path.split('.').next().unwrap_or("1")).unwrap_or(0),
-            ),
-        });
-        (progress, step)
-    });
+    let (progress, step, usage) =
+        cell.state
+            .lock()
+            .map_or((0.0, None, TaskUsage::default()), |mut state| {
+                if terminal {
+                    state.host_work = super::store::HostWorkState::Closed;
+                }
+                // The wait starts when the task first asks; publishing the same
+                // pause again does not restart it.
+                state.waiting_since = if waits {
+                    state
+                        .waiting_since
+                        .or_else(|| Some(std::time::Instant::now()))
+                } else {
+                    None
+                };
+                let total = state.flow.steps.len().max(1);
+                let fraction = |count: usize| f32::from(u16::try_from(count).unwrap_or(u16::MAX));
+                let progress = fraction(state.finished.min(total)) / fraction(total);
+                let step = state.steps.last().map(|report| StepView {
+                    index: interpret::top_index(report.path.split('.').next().unwrap_or("1"))
+                        .unwrap_or(0),
+                    total: state.flow.steps.len(),
+                    kind: report.kind.clone(),
+                    intent: state.facts.redact(&report.text),
+                    surface: interpret::app_at(
+                        &state.flow,
+                        interpret::top_index(report.path.split('.').next().unwrap_or("1"))
+                            .unwrap_or(0),
+                    ),
+                });
+                (progress, step, state.usage.snapshot())
+            });
     cell.view.send_modify(|view| {
         view.next = next_calls(&status);
         view.status = status;
         summary.clone_into(&mut view.summary);
         view.progress = progress;
         view.step = step;
+        view.usage = usage;
     });
 }
 

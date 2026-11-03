@@ -103,7 +103,13 @@ impl Desktop {
     #[must_use]
     pub fn list_apps(&self, request: ListAppsRequest) -> DesktopResponse {
         self.run("list-apps", Need::Nothing, |adapter, _context| {
-            list_apps::execute(list_apps::ListAppsArgs { app: request.app }, adapter)
+            list_apps::execute(
+                list_apps::ListAppsArgs {
+                    app: request.app,
+                    timeout_ms: None,
+                },
+                adapter,
+            )
         })
     }
 
@@ -119,7 +125,13 @@ impl Desktop {
     #[must_use]
     pub fn list_windows(&self, request: ListWindowsRequest) -> DesktopResponse {
         self.run("list-windows", Need::Nothing, |adapter, _context| {
-            list_windows::execute(list_windows::ListWindowsArgs { app: request.app }, adapter)
+            list_windows::execute(
+                list_windows::ListWindowsArgs {
+                    app: request.app,
+                    timeout_ms: None,
+                },
+                adapter,
+            )
         })
     }
 

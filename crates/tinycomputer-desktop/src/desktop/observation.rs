@@ -46,8 +46,11 @@ impl Desktop {
                     compact: request.compact,
                     surface: convert::surface(request.surface),
                     skeleton: request.skeleton,
-                    root_ref: request.root_ref,
-                    snapshot_id: request.snapshot_id,
+                    root_ref: request.root_ref.map(|ref_id| {
+                        convert::qualified_ref(ref_id, request.snapshot_id.as_deref())
+                    }),
+                    timeout_ms: None,
+                    force_electron_a11y: false,
                 },
                 adapter,
                 context,
@@ -77,8 +80,9 @@ impl Desktop {
                 find::FindArgs {
                     app: request.app,
                     window_id: request.window_id,
-                    root: request.root,
-                    snapshot: request.snapshot,
+                    root: request
+                        .root
+                        .map(|ref_id| convert::qualified_ref(ref_id, request.snapshot.as_deref())),
                     surface: convert::surface(request.surface),
                     filter: find::FindFilterArgs {
                         role: request.role,
@@ -101,6 +105,7 @@ impl Desktop {
                         nth: request.nth,
                         limit: request.limit,
                     },
+                    timeout_ms: None,
                 },
                 adapter,
                 context,
@@ -122,8 +127,7 @@ impl Desktop {
         self.run("get", Need::Accessibility, |adapter, context| {
             get::execute(
                 get::GetArgs {
-                    ref_id: request.ref_id,
-                    snapshot_id: request.snapshot_id,
+                    ref_id: convert::qualified_ref(request.ref_id, request.snapshot_id.as_deref()),
                     property: convert::element_property(request.property),
                 },
                 adapter,
@@ -149,8 +153,7 @@ impl Desktop {
         self.run("is", Need::Accessibility, |adapter, context| {
             is_check::execute(
                 is_check::IsArgs {
-                    ref_id: request.ref_id,
-                    snapshot_id: request.snapshot_id,
+                    ref_id: convert::qualified_ref(request.ref_id, request.snapshot_id.as_deref()),
                     property: convert::state_property(request.property),
                 },
                 adapter,

@@ -4,12 +4,15 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use serde_json::json;
-use tinycomputer_bus::agent::{RescueOutcome, StartTaskRequest, TaskBudget, TaskStatus, TaskView};
+use tinycomputer_bus::agent::{
+    RescueOutcome, SecretHandle, StartTaskRequest, TaskBudget, TaskStatus, TaskView,
+};
 use tinycomputer_bus::{DesktopResponse, FlowStep, FlowStopReason, StepOutcome};
 
 use super::{Script, controller, failed_at_step_two, finished_run, flow, journaled, settle, step};
 use crate::planner::{Completion, LanguageModel, Role, Turn};
 use crate::rescue::{MAX_RESCUES, Rescuer};
+use crate::task::FailedStepRecoveryResult;
 use crate::task::Tasks;
 
 /// Answers from a queue and records every conversation it was shown.
@@ -84,6 +87,175 @@ const TWO_STEPS: &str = r#"{"action": "retry", "reason": "try the button's label
 
 const ONE_STEP: &str = r#"{"action": "retry", "reason": "try the button's label",
   "steps": ["press Search Flights"]}"#;
+
+#[tokio::test]
+async fn host_recovery_runs_only_the_failed_top_level_step_tail() {
+    let (tasks, script) = controller(vec![
+        failed_at_step_two(),
+        finished_run(
+            FlowStopReason::Completed,
+            vec![step(
+                "1",
+                "do",
+                "open the cheapest result",
+                StepOutcome::Done,
+                "",
+            )],
+            &[],
+            None,
+        ),
+    ]);
+    *script.recovery.lock().unwrap() = Some(FailedStepRecoveryResult::Completed {
+        reason: "the failed search step completed".to_owned(),
+        actions: 1,
+        model_calls: 1,
+    });
+    let original = flow(flights());
+    let view = tasks
+        .start(&StartTaskRequest {
+            flow: Some(original.clone()),
+            task: Some("find the cheapest flight".to_owned()),
+            budget: TaskBudget {
+                max_actions: Some(9),
+                max_model_calls: Some(8),
+                max_elapsed_ms: Some(90_000),
+                ..TaskBudget::default()
+            },
+            ..StartTaskRequest::default()
+        })
+        .data
+        .unwrap();
+
+    assert!(matches!(
+        settle(&tasks, &view.id).await.status,
+        TaskStatus::Done { .. }
+    ));
+    let requests = script.requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[1].flow.steps,
+        original.steps[2..].to_vec(),
+        "the completed prefix and recovered step do not replay"
+    );
+    let recoveries = script.recoveries.lock().unwrap();
+    assert_eq!(recoveries.len(), 1);
+    assert_eq!(recoveries[0].remaining_actions, 6);
+    assert_eq!(recoveries[0].remaining_model_calls, 8);
+    assert_eq!(recoveries[0].remaining_ms, Some(90_000));
+}
+
+#[tokio::test]
+async fn host_recovery_fails_closed_for_a_nested_failed_step() {
+    let (tasks, script) = controller(vec![failed_at_step_two()]);
+    *script.recovery.lock().unwrap() = Some(FailedStepRecoveryResult::Completed {
+        reason: "must not skip the branch sibling".to_owned(),
+        actions: 1,
+        model_calls: 1,
+    });
+    let nested = json!({"app":"browser","steps":[
+        "open the shop home page",
+        {"if":{"condition":"the search form is visible",
+          "then":["search the shop", "confirm the result"],
+          "else":["open search", "search the shop"]}},
+        {"stop_before":"placing the order"}
+    ]});
+    let view = tasks
+        .start(&StartTaskRequest {
+            flow: Some(flow(nested)),
+            task: Some("buy the listed item".to_owned()),
+            ..StartTaskRequest::default()
+        })
+        .data
+        .unwrap();
+
+    assert!(matches!(
+        settle(&tasks, &view.id).await.status,
+        TaskStatus::Failed { .. }
+    ));
+    assert_eq!(
+        script.requests.lock().unwrap().len(),
+        1,
+        "completed prefix runs once"
+    );
+    assert!(
+        script.recoveries.lock().unwrap().is_empty(),
+        "a nested sibling cannot be skipped"
+    );
+}
+
+#[tokio::test]
+async fn a_cancelled_host_recovery_keeps_its_call_reservation_and_elapsed_time() {
+    let (tasks, script) = controller(vec![failed_at_step_two()]);
+    *script.reserve_host_calls.lock().unwrap() = true;
+    *script.hang_recovery.lock().unwrap() = true;
+    let view = tasks
+        .start(&StartTaskRequest {
+            flow: Some(flow(flights())),
+            task: Some("find the cheapest flight".to_owned()),
+            budget: TaskBudget {
+                max_model_calls: Some(1),
+                max_elapsed_ms: Some(40),
+                ..TaskBudget::default()
+            },
+            ..StartTaskRequest::default()
+        })
+        .data
+        .unwrap();
+
+    assert!(matches!(
+        settle(&tasks, &view.id).await.status,
+        TaskStatus::Failed { .. }
+    ));
+    assert_eq!(*script.host_call_reservations.lock().unwrap(), [true]);
+    assert_eq!(
+        script.recoveries.lock().unwrap()[0].remaining_model_calls,
+        1
+    );
+    let cell = tasks.cells.lock().unwrap().values().next().unwrap().clone();
+    let state = cell.state.lock().unwrap();
+    assert_eq!(state.spent.model_calls, 1);
+    assert!(
+        (20..=100).contains(&state.spent.elapsed_ms),
+        "cancelled host work should charge its active interval once, got {} ms",
+        state.spent.elapsed_ms
+    );
+}
+
+#[tokio::test]
+async fn a_cancelled_task_closes_a_retained_host_budget_scope() {
+    let (tasks, script) = controller(vec![failed_at_step_two()]);
+    *script.reserve_host_calls.lock().unwrap() = true;
+    *script.hang_recovery.lock().unwrap() = true;
+    let view = tasks
+        .start(&StartTaskRequest {
+            flow: Some(flow(flights())),
+            task: Some("find the cheapest flight".to_owned()),
+            budget: TaskBudget {
+                max_model_calls: Some(2),
+                max_elapsed_ms: Some(10_000),
+                ..TaskBudget::default()
+            },
+            ..StartTaskRequest::default()
+        })
+        .data
+        .unwrap();
+    for _ in 0..100 {
+        if !script.recoveries.lock().unwrap().is_empty() {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(script.recoveries.lock().unwrap().len(), 1);
+    assert!(matches!(
+        tasks.cancel_and_wait(&view.id).await.data.unwrap().status,
+        TaskStatus::Cancelled
+    ));
+
+    let scope = script.recoveries.lock().unwrap()[0].host_budget.clone();
+    assert_eq!(scope.remaining_model_calls(), 0);
+    assert_eq!(scope.remaining_ms(), Some(0));
+    assert!(!scope.try_reserve_model_call());
+}
 
 #[tokio::test]
 async fn a_failed_step_is_rescued_and_the_task_finishes() {
@@ -404,6 +576,48 @@ async fn a_secret_a_field_holds_never_reaches_the_rescuer() {
     assert!(asked.contains("Card number = \"${card}\""), "{asked}");
     assert!(asked.contains("Email = \"‹email›\""), "{asked}");
     assert!(!asked.contains("1111"));
+}
+
+#[tokio::test]
+async fn a_host_secret_is_redacted_from_the_rescue_prompt_and_report() {
+    const CARD: &str = "4111 1111 1111 1111";
+    let (tasks, script) = controller(vec![failed_at_step_two()]);
+    *script.screen.lock().unwrap() = vec![format!("Card number = \"{CARD}\"")];
+    *script.host_secret.lock().unwrap() = Some(CARD.to_owned());
+    let model = Arc::new(Model {
+        answers: Mutex::new(
+            vec![Ok(format!(
+                r#"{{"action":"give_up","reason":"host saw {CARD}"}}"#
+            ))]
+            .into(),
+        ),
+        seen: Mutex::default(),
+    });
+    let tasks = tasks.with_rescuer(Rescuer::new(model.clone()));
+    let view = tasks
+        .start(&StartTaskRequest {
+            flow: Some(flow(flights())),
+            fact_handles: BTreeMap::from([(
+                "card".to_owned(),
+                SecretHandle {
+                    handle: "opaque-card".to_owned(),
+                    mask: "•••• 1111".to_owned(),
+                    kind: "payment_card".to_owned(),
+                },
+            )]),
+            ..StartTaskRequest::default()
+        })
+        .data
+        .unwrap();
+    settle(&tasks, &view.id).await;
+
+    let prompt = format!("{:?}", model.seen.lock().unwrap());
+    assert!(!prompt.contains(CARD));
+    assert!(prompt.contains("•••• 1111"));
+    let report = tasks.report(&view.id).data.unwrap();
+    let report = serde_json::to_string(&report).unwrap();
+    assert!(!report.contains(CARD));
+    assert!(report.contains("•••• 1111"));
 }
 
 #[tokio::test]

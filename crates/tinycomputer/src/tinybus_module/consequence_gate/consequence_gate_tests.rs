@@ -6,7 +6,7 @@
 use std::sync::{Arc, Mutex};
 
 use tinybus::Connection;
-use tinycomputer_bus::agent::{ContinueTaskRequest, TaskId};
+use tinycomputer_bus::agent::{ContinueTaskRequest, HostContext, TaskId};
 
 use super::*;
 
@@ -58,9 +58,10 @@ fn approval(approve: Option<bool>) -> ContinueTaskRequest {
     ContinueTaskRequest {
         id: TaskId::new("t1"),
         inputs: std::collections::BTreeMap::new(),
+        fact_handles: std::collections::BTreeMap::new(),
         approve,
         answer: None,
-        host_context: None,
+        host_context: Some(HostContext::new("opaque-context")),
     }
 }
 
@@ -103,24 +104,9 @@ async fn an_allowed_approval_goes_through() {
     assert_eq!(seen[0].task, "t1");
     assert_eq!(seen[0].target, "Send");
     assert_eq!(seen[0].kind, ConsequenceKind::Irreversible);
-}
-
-#[tokio::test]
-async fn host_context_is_relayed_unchanged_to_consequence_review() {
-    let host = FakeHost::new(Answer::Allow);
-    let link = ConsequenceLink::new(Box::new(host.clone()));
-    let mut request = approval(Some(true));
-    request.host_context = Some(tinycomputer_bus::agent::HostContext::new("host-token"));
-
-    link.screen(&mut request, Some(pending())).await;
-
-    assert_eq!(request.approve, Some(true));
     assert_eq!(
-        host.seen.lock().unwrap()[0]
-            .host_context
-            .as_ref()
-            .map(tinycomputer_bus::agent::HostContext::as_str),
-        Some("host-token")
+        seen[0].host_context.as_ref().map(HostContext::as_str),
+        Some("opaque-context")
     );
 }
 
@@ -193,10 +179,40 @@ async fn the_bus_port_reaches_the_hosts_interface() -> tinybus::Result<()> {
     host_connection.request_name(INTERFACE).await?;
     let module = Connection::connect(bus.connect().await?).await?;
 
-    let link = ConsequenceLink::new(Box::new(BusPort::new(module)));
+    let link = ConsequenceLink::new(Box::new(BusPort::new(module, None)));
     let verdict = link.review("t1", "pay now", "Pay", None).await;
     assert_eq!(verdict, Verdict::Denied("no".to_owned()));
     assert_eq!(fake.seen.lock().unwrap()[0].kind, ConsequenceKind::Payment);
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_bus_port_never_sends_host_context_to_an_unconfidential_host() -> tinybus::Result<()> {
+    use tinybus::broker::Broker;
+    use tinybus::transport::memory::MemoryBus;
+
+    let bus = MemoryBus::new();
+    Broker::new().spawn(bus.clone());
+    let host_connection = Connection::connect(bus.connect().await?).await?;
+    let fake = FakeHost::new(Answer::Allow);
+    host_connection
+        .serve_at(OBJECT_PATH.try_into()?, BusHost(fake.clone()))
+        .await?;
+    host_connection.request_name(INTERFACE).await?;
+    let module = Connection::connect(bus.connect().await?).await?;
+
+    let link = ConsequenceLink::new(Box::new(BusPort::new(module, None)));
+    let verdict = link
+        .review(
+            "t1",
+            "send",
+            "Send",
+            Some(HostContext::new("opaque-context")),
+        )
+        .await;
+
+    assert!(matches!(verdict, Verdict::Denied(ref reason) if reason.contains("confidential")));
+    assert!(fake.seen.lock().unwrap().is_empty());
     Ok(())
 }
 
@@ -208,10 +224,55 @@ async fn the_bus_port_treats_a_host_that_serves_nothing_as_unreviewed() -> tinyb
     let bus = MemoryBus::new();
     Broker::new().spawn(bus.clone());
     let module = Connection::connect(bus.connect().await?).await?;
-    let link = ConsequenceLink::new(Box::new(BusPort::new(module)));
+    let link = ConsequenceLink::new(Box::new(BusPort::new(module, None)));
     assert_eq!(
         link.review("t1", "send", "Send", None).await,
         Verdict::Unreviewed
     );
     Ok(())
+}
+
+#[tokio::test]
+async fn a_missing_configured_callback_is_a_failure_not_an_unreviewed_action() -> tinybus::Result<()>
+{
+    use tinybus::broker::Broker;
+    use tinybus::transport::memory::MemoryBus;
+
+    let bus = MemoryBus::new();
+    Broker::new().spawn(bus.clone());
+    let host = Connection::connect(bus.connect().await?).await?;
+    let destination = host
+        .unique_name()
+        .expect("connected host has a unique name");
+    host.serve_at(OBJECT_PATH.try_into()?, UnrelatedObject)
+        .await?;
+    let module = Connection::connect(bus.connect().await?).await?;
+    let link = ConsequenceLink::new(Box::new(BusPort::new(module, Some(destination))));
+
+    assert!(matches!(
+        link.review("t1", "send", "Send", None).await,
+        Verdict::Denied(_)
+    ));
+    Ok(())
+}
+
+struct UnrelatedObject;
+
+#[tinybus::interface(name = "org.example.Unrelated")]
+impl UnrelatedObject {
+    async fn ping(&self) -> tinybus::Result<()> {
+        std::future::ready(Ok(())).await
+    }
+}
+
+#[test]
+fn a_configured_callback_that_is_not_served_is_a_failure() {
+    let error = tinybus::Error::UnknownInterface {
+        path: OBJECT_PATH.parse().unwrap(),
+        interface: INTERFACE.parse().unwrap(),
+    };
+    assert!(matches!(
+        BusPort::classify_error(true, &error),
+        PortError::Failed(_)
+    ));
 }

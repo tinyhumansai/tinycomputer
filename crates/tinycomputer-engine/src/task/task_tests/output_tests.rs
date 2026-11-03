@@ -96,6 +96,48 @@ async fn a_finished_task_returns_its_answer_in_the_shape_asked_for() {
 }
 
 #[tokio::test]
+async fn host_redaction_covers_output_model_inputs_and_results() {
+    const CARD: &str = "4111 1111 1111 1111";
+    let model = Arc::new(Model {
+        answers: Mutex::new(vec![Ok(format!(r#"{{"card":"{CARD}"}}"#))].into()),
+        seen: Mutex::default(),
+    });
+    let response = finished_run(
+        FlowStopReason::Completed,
+        vec![],
+        &[("card_text", CARD)],
+        None,
+    );
+    let runner = Arc::new(super::Script {
+        replies: Mutex::new(vec![response].into()),
+        host_secret: Mutex::new(Some(CARD.to_owned())),
+        ..super::Script::default()
+    });
+    let tasks = Tasks::new(runner).with_shaper(Shaper::new(model.clone()));
+    let request = StartTaskRequest {
+        flow: Some(flow(json!({
+            "app": "browser",
+            "steps": [{"read": {"what": "card echo", "into": "card_text"}}]
+        }))),
+        output: Some(TaskOutput {
+            instructions: "return the card echo".to_owned(),
+            schema: None,
+        }),
+        ..StartTaskRequest::default()
+    };
+    let view = tasks.start(&request).data.unwrap();
+    let finished = settle(&tasks, &view.id).await;
+    let TaskStatus::Done { result, .. } = finished.status else {
+        panic!("expected a completed shaped task");
+    };
+
+    let sent = format!("{:?}", model.seen.lock().unwrap());
+    assert!(!sent.contains(CARD));
+    assert!(sent.contains("•••• 1111"));
+    assert_eq!(result.unwrap()["card"], "•••• 1111");
+}
+
+#[tokio::test]
 async fn an_answer_that_never_fits_fails_the_task_with_its_records_kept() {
     let (tasks, _) = shaped(vec![chats_read()], &[Ok(r#"{"name": 3}"#); 3]);
     let view = tasks.start(&request(Some(schema()))).data.unwrap();

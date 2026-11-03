@@ -66,6 +66,7 @@ async fn a_finished_flow_is_done_with_its_reads_and_no_fact_values() {
         (request.max_actions, request.max_model_calls, request.votes),
         (120, 6000, 7)
     );
+    assert_eq!(request.max_do_turns, None, "the module's own default");
     assert!(request.facts.is_empty(), "an email is shared, not secret");
     assert_eq!(request.brief.details["email"], "asha@example.com");
     assert!(
@@ -213,6 +214,152 @@ async fn a_value_supplied_for_a_missing_fact_still_fails_fast_if_it_leaks() {
         script.requests.lock().unwrap().is_empty(),
         "the invalid flow must never be run"
     );
+}
+
+#[tokio::test]
+async fn a_missing_sensitive_value_can_be_supplied_as_a_host_handle() {
+    let (tasks, script) = controller(vec![finished_run(
+        FlowStopReason::Completed,
+        vec![step("1", "enter", "passport number", StepOutcome::Done, "")],
+        &[],
+        None,
+    )]);
+    let view = start(
+        &tasks,
+        json!({"app": "Mail", "steps": [
+            {"enter": {"passport number": "${passport number}"}}
+        ]}),
+        &[],
+    );
+    assert!(matches!(view.status, TaskStatus::NeedsInput { .. }));
+
+    let supplied = tasks.continue_task(ContinueTaskRequest {
+        id: view.id.clone(),
+        fact_handles: BTreeMap::from([(
+            "passport number".to_owned(),
+            tinycomputer_bus::agent::SecretHandle {
+                handle: "vault-secret-handle".to_owned(),
+                mask: "••••567".to_owned(),
+                kind: "identity_document".to_owned(),
+            },
+        )]),
+        ..ContinueTaskRequest::default()
+    });
+    assert_eq!(supplied.data.unwrap().status, TaskStatus::Running);
+    assert!(matches!(
+        settle(&tasks, &view.id).await.status,
+        TaskStatus::Done { .. }
+    ));
+
+    let request = &script.requests.lock().unwrap()[0];
+    assert_eq!(
+        request.fact_handles["passport number"].handle,
+        "vault-secret-handle"
+    );
+    assert_eq!(request.fact_handles["passport number"].mask, "••••567");
+    assert!(request.facts.contains("passport number"));
+    assert!(!format!("{request:?}").contains("vault-secret-handle"));
+}
+
+#[tokio::test]
+async fn invalid_continuation_handles_leave_existing_facts_and_pause_unchanged() {
+    let (tasks, script) = controller(vec![finished_run(
+        FlowStopReason::Completed,
+        vec![step(
+            "1",
+            "enter",
+            "passport number and email",
+            StepOutcome::Done,
+            "",
+        )],
+        &[],
+        None,
+    )]);
+    let view = tasks
+        .start(&StartTaskRequest {
+            flow: Some(flow(json!({"app": "Mail", "steps": [
+                {"enter": {
+                    "passport number": "${passport number}",
+                    "email": "${email}"
+                }}
+            ]}))),
+            fact_handles: BTreeMap::from([(
+                "passport number".to_owned(),
+                tinycomputer_bus::agent::SecretHandle {
+                    handle: "existing-vault-handle".to_owned(),
+                    mask: "••••567".to_owned(),
+                    kind: "identity_document".to_owned(),
+                },
+            )]),
+            ..StartTaskRequest::default()
+        })
+        .data
+        .unwrap();
+    assert!(matches!(view.status, TaskStatus::NeedsInput { .. }));
+
+    for invalid in [
+        ContinueTaskRequest {
+            fact_handles: BTreeMap::from([(
+                "email".to_owned(),
+                tinycomputer_bus::agent::SecretHandle::default(),
+            )]),
+            ..ContinueTaskRequest::default()
+        },
+        ContinueTaskRequest {
+            inputs: BTreeMap::from([("email".to_owned(), "person@example.test".to_owned())]),
+            fact_handles: BTreeMap::from([(
+                "email".to_owned(),
+                tinycomputer_bus::agent::SecretHandle {
+                    handle: "opaque".to_owned(),
+                    mask: "‹email›".to_owned(),
+                    kind: "input".to_owned(),
+                },
+            )]),
+            ..ContinueTaskRequest::default()
+        },
+    ] {
+        let reply = tasks.continue_task(ContinueTaskRequest {
+            id: view.id.clone(),
+            ..invalid
+        });
+        assert_eq!(code(&reply), "INVALID_SECRET_FACT");
+        let current = tasks
+            .list()
+            .data
+            .unwrap()
+            .into_iter()
+            .find(|task| task.id == view.id)
+            .unwrap();
+        assert!(matches!(
+            current.status,
+            TaskStatus::NeedsInput { ref fields } if fields.len() == 1 && fields[0].name == "email"
+        ));
+        assert!(script.requests.lock().unwrap().is_empty());
+    }
+
+    let continued = tasks.continue_task(ContinueTaskRequest {
+        id: view.id.clone(),
+        fact_handles: BTreeMap::from([(
+            "email".to_owned(),
+            tinycomputer_bus::agent::SecretHandle {
+                handle: "new-private-handle".to_owned(),
+                mask: "‹email›".to_owned(),
+                kind: "asked_input".to_owned(),
+            },
+        )]),
+        ..ContinueTaskRequest::default()
+    });
+    assert_eq!(continued.data.unwrap().status, TaskStatus::Running);
+    assert!(matches!(
+        settle(&tasks, &view.id).await.status,
+        TaskStatus::Done { .. }
+    ));
+    let request = &script.requests.lock().unwrap()[0];
+    assert_eq!(
+        request.fact_handles["passport number"].handle,
+        "existing-vault-handle"
+    );
+    assert_eq!(request.fact_handles["email"].handle, "new-private-handle");
 }
 
 #[tokio::test]
@@ -406,6 +553,45 @@ async fn requests_that_cannot_start_are_refused_with_a_hint() {
 }
 
 #[tokio::test]
+async fn host_supplies_a_plan_on_the_same_planless_task() {
+    let plan = flow(json!({"app":"browser","steps":["open the shop home page"]}));
+    let (tasks, script) = controller(vec![finished_run(
+        FlowStopReason::Completed,
+        vec![step(
+            "1",
+            "do",
+            "open the shop home page",
+            StepOutcome::Done,
+            "",
+        )],
+        &[],
+        None,
+    )]);
+    *script.plan_recovery.lock().unwrap() = Some(crate::task::PlanRecoveryResult::Plan(plan));
+    let initial = tasks
+        .start(&StartTaskRequest {
+            task: Some("find a blue wool sweater".to_owned()),
+            facts: BTreeMap::from([("email".to_owned(), "private@example.test".to_owned())]),
+            ..StartTaskRequest::default()
+        })
+        .data
+        .unwrap();
+
+    assert!(matches!(
+        settle(&tasks, &initial.id).await.status,
+        TaskStatus::Done { .. }
+    ));
+    let requests = script.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].task_id.as_deref(), Some(initial.id.0.as_str()));
+    let plan_requests = script.plan_requests.lock().unwrap();
+    assert_eq!(plan_requests.len(), 1);
+    assert_eq!(plan_requests[0].task, initial.id);
+    assert_eq!(plan_requests[0].known_names, ["email"]);
+    assert!(!plan_requests[0].task_text.contains("private@example.test"));
+}
+
+#[tokio::test]
 async fn extracted_rows_become_structured_records() {
     let (tasks, _) = controller(vec![finished_run(
         FlowStopReason::Completed,
@@ -444,4 +630,30 @@ async fn a_run_gets_the_callers_values_and_the_flow_keeps_its_own_definitions() 
         "a definition passed as a caller value would shadow its expansion"
     );
     assert_eq!(request.flow.vars["first_name"], "${first name}");
+}
+
+#[tokio::test]
+async fn a_budget_turn_limit_reaches_every_run() {
+    let (tasks, script) = controller(vec![finished_run(
+        FlowStopReason::Completed,
+        vec![step("1", "do", "add it to the cart", StepOutcome::Done, "")],
+        &[],
+        None,
+    )]);
+    let view = tasks
+        .start(&StartTaskRequest {
+            flow: Some(
+                serde_json::from_value(json!({"app": "browser", "steps": ["add it to the cart"]}))
+                    .unwrap(),
+            ),
+            budget: tinycomputer_bus::agent::TaskBudget {
+                max_do_turns: Some(16),
+                ..tinycomputer_bus::agent::TaskBudget::default()
+            },
+            ..StartTaskRequest::default()
+        })
+        .data
+        .unwrap();
+    settle(&tasks, &view.id).await;
+    assert_eq!(script.requests.lock().unwrap()[0].max_do_turns, Some(16));
 }

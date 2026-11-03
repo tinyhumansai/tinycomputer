@@ -24,10 +24,12 @@ mod render;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
 use tinycomputer_bus::agent::{LanguageModelConfiguration, Rescue};
 use tinycomputer_bus::{FLOW_GUIDE, Flow, FlowStep, StepReport};
 
 use crate::planner::{LanguageModel, ModelUse, REPAIRS, Role, Turn};
+use crate::{ModelRole, UsageRecorder};
 use judge::judge;
 pub(crate) use judge::resumed;
 use render::render;
@@ -94,7 +96,7 @@ steps the screen is also past>}, or {\"action\": \"give_up\", \"reason\": \"<why
 
 /// What the rescuer is told about a failure, with every fact value already
 /// redacted.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Briefing {
     /// The task in the caller's words; empty when only a flow was given.
     pub goal: String,
@@ -146,6 +148,7 @@ pub enum Guidance {
 pub struct Rescuer {
     model: Arc<dyn LanguageModel>,
     configuration: Option<LanguageModelConfiguration>,
+    usage: Option<Arc<UsageRecorder>>,
 }
 
 impl std::fmt::Debug for Rescuer {
@@ -161,6 +164,7 @@ impl Rescuer {
         Self {
             model,
             configuration: None,
+            usage: None,
         }
     }
 
@@ -169,6 +173,13 @@ impl Rescuer {
     #[must_use]
     pub fn with_configuration(mut self, configuration: LanguageModelConfiguration) -> Self {
         self.configuration = Some(configuration);
+        self
+    }
+
+    /// This rescuer recording calls into a task-scoped collector.
+    #[must_use]
+    pub fn with_usage_recorder(mut self, usage: Arc<UsageRecorder>) -> Self {
+        self.usage = Some(usage);
         self
     }
 
@@ -202,9 +213,13 @@ impl Rescuer {
         let mut last = String::new();
         for _ in 0..=REPAIRS {
             used.calls += 1;
-            let reply = match self.model.complete(&turns).await {
-                Ok(reply) => reply,
-                Err(error) => return (Err(error), used),
+            let reply = match self
+                .model
+                .complete_for_task(&turns, self.usage.clone(), ModelRole::Rescue)
+                .await
+            {
+                Ok(reply) => reply.text,
+                Err(error) => return (Err(error.message), used),
             };
             turns.push(Turn::new(Role::Assistant, reply.clone()));
             let problem = match judge(&reply, briefing) {
