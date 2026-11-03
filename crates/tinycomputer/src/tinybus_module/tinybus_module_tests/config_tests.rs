@@ -224,10 +224,12 @@ fn the_browser_configuration_is_read_or_refused() {
             .unwrap()
             .is_some()
     );
-    assert!(serde_json::from_value::<ComputerConfig>(json!({"browser": {
-        "executable": "/usr/bin/chromium"
-    }}))
-    .is_ok());
+    assert!(
+        serde_json::from_value::<ComputerConfig>(json!({"browser": {
+            "executable": "/usr/bin/chromium"
+        }}))
+        .is_ok()
+    );
     // Settling promptly and opening the browser early are on unless turned
     // off.
     let unset = BrowserDefaults::default();

@@ -65,7 +65,9 @@ pub(super) async fn initialize_upstream(
         })
         .flat_map(|(line, name)| line[name.len() + 1..].split(','))
         .map(|token| token.trim().to_ascii_lowercase())
-        .filter(|token| !["upgrade", "host", "content-length", "transfer-encoding"].contains(&token.as_str()))
+        .filter(|token| {
+            !["upgrade", "host", "content-length", "transfer-encoding"].contains(&token.as_str())
+        })
         .collect();
     for (line, name) in headers() {
         let name = name.to_ascii_lowercase();

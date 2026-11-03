@@ -94,7 +94,7 @@ fn enforced_launch_refuses_caller_plugins_extensions_and_init_scripts() {
                 false,
                 None,
             )
-                .is_err(),
+            .is_err(),
             "{field} was accepted"
         );
     }
@@ -118,12 +118,9 @@ fn a_host_executable_launches_under_the_enforced_proxy() {
         assert_eq!(launch["engine"], "chrome");
         assert_eq!(launch["proxy"]["server"], "http://127.0.0.1:39123");
         assert_eq!(launch["proxy"]["bypass"], "<-loopback>");
-        assert!(
-            launch["args"]
-                .as_array()
-                .expect("args")
-                .contains(&json!("--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"))
-        );
+        assert!(launch["args"].as_array().expect("args").contains(&json!(
+            "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"
+        )));
     }
 }
 
