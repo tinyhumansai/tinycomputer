@@ -1,4 +1,4 @@
-//! Unknown members, wrong families, and malformed envelopes.
+//! Unknown members, wrong families, malformed envelopes, and an unknown module.
 
 use super::*;
 
@@ -67,6 +67,18 @@ async fn unknown_members_wrong_families_and_bad_envelopes_fail_closed()
         Err(ClientError::AgentResponse(
             tinycomputer_bus::agent::AgentResponseError::Version { .. }
         ))
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_module_the_host_cannot_find_fails_with_a_module_error()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fixture = untrusted_fixture().await?;
+    let client = client_for_unknown_module(&fixture.bus);
+    assert!(matches!(
+        client.describe(&ComputerConfig::default()).await,
+        Err(ClientError::Module(_))
     ));
     Ok(())
 }

@@ -106,6 +106,14 @@ impl ModuleAccess for TestAccess {
     }
 }
 
+/// A client for a module id the host's release table does not hold.
+pub(crate) fn client_for_unknown_module(bus: &MemoryBus) -> ComputerClient {
+    ComputerClient::new(ReconfigurableModule::new(
+        TestAccess::new(bus.clone(), None),
+        "tinycomputer-unknown",
+    ))
+}
+
 pub(crate) fn client_for(bus: &MemoryBus, host: Option<Arc<ModuleHost>>) -> ComputerClient {
     ComputerClient::new(ReconfigurableModule::new(
         TestAccess::new(bus.clone(), host),
