@@ -76,6 +76,14 @@ async fn enforced_launcher_creates_a_private_session_without_implicit_launch() {
 }
 
 #[tokio::test]
+async fn an_enforced_session_has_a_proxy_password_apart_from_its_session_id() {
+    let engine = super::enforced(Arc::new(RejectAll), "secrets");
+    assert_eq!(engine.proxy_session_id.len(), 48);
+    assert_eq!(engine.proxy_password.len(), 48);
+    assert_ne!(engine.proxy_password, engine.proxy_session_id);
+}
+
+#[tokio::test]
 async fn enforced_browser_refuses_implicit_launch_before_any_request() {
     let mut engine = EnforcedAgentBrowser::new(Arc::new(RejectAll)).open("unit");
     let reply = engine
@@ -92,6 +100,7 @@ async fn a_closed_or_lost_browser_cannot_implicitly_launch_without_the_proxy() {
         egress_authorizer: Some(Arc::new(RejectAll)),
         proxy: None,
         proxy_session_id: "private-session-id".into(),
+        proxy_password: "private-proxy-password".into(),
         enforced_launch: true,
     };
     let reply = engine
@@ -113,6 +122,7 @@ async fn an_exited_enforced_browser_can_still_be_closed() {
         egress_authorizer: Some(Arc::new(RejectAll)),
         proxy: None,
         proxy_session_id: "private-session-id".into(),
+        proxy_password: "private-proxy-password".into(),
         enforced_launch: true,
     };
 
@@ -130,6 +140,7 @@ async fn enforced_browser_refuses_process_side_reads_with_a_url() {
         egress_authorizer: Some(Arc::new(RejectAll)),
         proxy: None,
         proxy_session_id: "private-session-id".into(),
+        proxy_password: "private-proxy-password".into(),
         enforced_launch: true,
     };
     let reply = engine
@@ -155,6 +166,7 @@ async fn enforced_browser_rechecks_liveness_after_waiting_for_engine_lock() {
         egress_authorizer: Some(Arc::new(RejectAll)),
         proxy: None,
         proxy_session_id: "private-session-id".into(),
+        proxy_password: "private-proxy-password".into(),
         enforced_launch: true,
     };
     let serialized = ENGINE.lock().await;

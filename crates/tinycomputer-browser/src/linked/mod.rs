@@ -53,6 +53,7 @@ impl Launcher for AgentBrowser {
             egress_authorizer: None,
             proxy: None,
             proxy_session_id: String::new(),
+            proxy_password: String::new(),
             enforced_launch: false,
         })
     }
@@ -60,13 +61,21 @@ impl Launcher for AgentBrowser {
 
 impl Launcher for EnforcedAgentBrowser {
     fn open(&self, session: &str) -> Box<dyn Engine> {
-        Box::new(Linked {
-            state: DaemonState::with_options(state_options(session)),
-            egress_authorizer: Some(self.authorizer.clone()),
-            proxy: None,
-            proxy_session_id: private_session_id(),
-            enforced_launch: false,
-        })
+        Box::new(enforced(self.authorizer.clone(), session))
+    }
+}
+
+/// An enforced session. The proxy password is its own secret: the session id
+/// reaches the host in every egress callback, so it must not also unlock the
+/// proxy.
+fn enforced(authorizer: Arc<dyn EgressAuthorizer>, session: &str) -> Linked {
+    Linked {
+        state: DaemonState::with_options(state_options(session)),
+        egress_authorizer: Some(authorizer),
+        proxy: None,
+        proxy_session_id: private_session_id(),
+        proxy_password: private_session_id(),
+        enforced_launch: false,
     }
 }
 
@@ -75,6 +84,7 @@ struct Linked {
     egress_authorizer: Option<Arc<dyn EgressAuthorizer>>,
     proxy: Option<EgressProxy>,
     proxy_session_id: String,
+    proxy_password: String,
     enforced_launch: bool,
 }
 
@@ -87,7 +97,7 @@ impl Engine for Linked {
         let launch = self.egress_authorizer.is_some() && action.as_deref() == Some("launch");
         Box::pin(async move {
             let command = if launch {
-                if self.proxy_session_id.len() != 48 {
+                if self.proxy_session_id.len() != 48 || self.proxy_password.len() != 48 {
                     return failure_reply(
                         &command,
                         "network policy could not create a private session identity",
@@ -100,7 +110,7 @@ impl Engine for Linked {
                     match EgressProxy::bind(
                         authorizer,
                         self.proxy_session_id.clone(),
-                        self.proxy_session_id.clone(),
+                        self.proxy_password.clone(),
                     )
                     .await
                     {
@@ -113,7 +123,7 @@ impl Engine for Linked {
                 let Some(proxy) = self.proxy.as_ref() else {
                     return failure_reply(&command, "network policy proxy could not start");
                 };
-                match enforce_launch(command.clone(), &proxy.url(), &self.proxy_session_id) {
+                match enforce_launch(command.clone(), &proxy.url(), &self.proxy_password) {
                     Ok(command) => command,
                     Err(reason) => return failure_reply(&command, reason),
                 }
