@@ -400,9 +400,10 @@ async fn verify_confidential_arity(
             .await;
         if !matches!(reply, Err(tinybus::Error::MethodFailed { name, .. }) if name == tinybus::Error::CONFIDENTIALITY_REQUIRED)
         {
-            return Err(
-                io::Error::other("a confidential member failed to require confidential delivery").into(),
-            );
+            return Err(io::Error::other(
+                "a confidential member failed to require confidential delivery",
+            )
+            .into());
         }
     }
     Ok(())

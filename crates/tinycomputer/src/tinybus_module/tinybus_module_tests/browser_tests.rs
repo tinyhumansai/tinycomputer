@@ -132,7 +132,10 @@ async fn call(proxy: &Proxy, member: &str, request: Value) -> tinybus::Result<De
 async fn read_output(service: &DesktopService, request: Value) -> tinybus::Result<DesktopResponse> {
     let member = methods::READ_OUTPUT.try_into()?;
     assert!(service.requires_confidential(&member));
-    Ok(serde_json::from_value(service.call(&member, json!([request])).await?).expect("an envelope"))
+    Ok(
+        serde_json::from_value(service.call(&member, json!([request])).await?)
+            .expect("an envelope"),
+    )
 }
 
 fn data(reply: &DesktopResponse) -> &Value {
