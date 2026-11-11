@@ -188,12 +188,6 @@ pub(crate) fn assert_catalogue_reply(member: &str, value: &Value) {
             assert_eq!(value["outcome"], "claimed");
             assert_eq!(value["path"], "/profile/fixture");
         }
-        tinycomputer_bus::browser::names::methods::READ_OUTPUT => {
-            assert_eq!(value["id"], "catalogue-output");
-            assert_eq!(value["offset"], 0);
-            assert_eq!(value["data"], "aGVsbG8=");
-            assert_eq!(value["eof"], true);
-        }
         _ => assert_eq!(*value, json!(member), "member {member} reply"),
     }
 }
@@ -354,6 +348,7 @@ pub(crate) fn handler_requires_confidential(member: &str) -> bool {
             names::accessibility::ACCESSIBILITY_FOCUS,
             names::accessibility::ACCESSIBILITY_VALIDATE_TARGET,
             names::accessibility::ACCESSIBILITY_PASTE,
+            tinycomputer_bus::browser::names::methods::READ_OUTPUT,
         ]
         .contains(&member)
 }

@@ -96,7 +96,8 @@ pub mod methods {
     /// one).
     ///
     /// Takes a [`crate::browser::ReadOutputRequest`]; its `data` is an
-    /// [`crate::browser::OutputChunk`].
+    /// [`crate::browser::OutputChunk`]. Requires confidential delivery: a
+    /// screenshot can show what a task typed, card details included.
     pub const READ_OUTPUT: &str = "BrowserReadOutput";
 
     /// Releases a held output before it expires.

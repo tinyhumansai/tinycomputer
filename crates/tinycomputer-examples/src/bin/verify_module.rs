@@ -393,6 +393,7 @@ async fn verify_confidential_arity(
         names::accessibility::ACCESSIBILITY_FOCUS,
         names::accessibility::ACCESSIBILITY_VALIDATE_TARGET,
         names::accessibility::ACCESSIBILITY_PASTE,
+        tinycomputer_bus::browser::names::methods::READ_OUTPUT,
     ] {
         let reply = proxy
             .call::<DesktopResponse>(member, serde_json::json!([]))
@@ -400,7 +401,7 @@ async fn verify_confidential_arity(
         if !matches!(reply, Err(tinybus::Error::MethodFailed { name, .. }) if name == tinybus::Error::CONFIDENTIALITY_REQUIRED)
         {
             return Err(
-                io::Error::other("native member failed to require confidential delivery").into(),
+                io::Error::other("a confidential member failed to require confidential delivery").into(),
             );
         }
     }
