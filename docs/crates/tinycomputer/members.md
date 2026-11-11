@@ -226,8 +226,9 @@ carry or reveal:
   when the task requested one.
 - `BrowserReadOutput` returns the bytes of a held screenshot, and a
   screenshot can show what a task typed into a form, card details included.
-  `BrowserScreenshot` and `BrowserReleaseOutput` stay ordinary: they carry
-  only the output's id.
+  `BrowserScreenshot` and `BrowserReleaseOutput` stay ordinary: they never
+  carry the bytes, though a screenshot reply's `OutputRef` does show the
+  output's id, size, SHA-256 digest, media type, and pixel dimensions.
 
 The other two task members that touch a running task, `AwaitTask` and
 `CancelTask`, are not confidential: they carry or return only a task id and

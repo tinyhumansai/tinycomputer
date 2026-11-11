@@ -345,4 +345,6 @@ endpoints directly.
   the bytes now are too.
 - Every plain call to it fails, so this is a major bump. A host reads outputs
   with a confidential call to an attested module. `BrowserScreenshot` and
-  `BrowserReleaseOutput` stay ordinary: they carry an id, never the bytes.
+  `BrowserReleaseOutput` stay ordinary: they never carry the bytes. A
+  screenshot reply's `OutputRef` does expose the output's id, size, SHA-256
+  digest, media type, and pixel dimensions in ordinary traffic.
