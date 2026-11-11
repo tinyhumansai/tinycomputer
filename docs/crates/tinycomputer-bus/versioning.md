@@ -9,7 +9,7 @@ code, so this page exists mostly to keep them apart.
 ## `CONTRACT_VERSION`: does this host understand this module
 
 ```rust,ignore
-pub const CONTRACT_VERSION: (u32, u32) = (2, 29);
+pub const CONTRACT_VERSION: (u32, u32) = (3, 0);
 ```
 
 This describes the *vocabulary*: the member set and the payload shapes,
@@ -25,7 +25,13 @@ bumping it is fixed:
   was removed or renamed. A host built against the old major version can no
   longer assume it is talking to something it understands.
 
-Contract 2.29 publishes the typed `ComputerConfig`, shared strict site-name
+Contract 3.0 makes `BrowserReadOutput` confidential. A held screenshot can
+show what a task typed, card details included, so its bytes no longer cross
+the bus in plain frames. Every plain call to it now fails, which is why this is
+a major bump: a host reads outputs with a confidential call, from an attested
+module.
+
+Contract 2.29 published the typed `ComputerConfig`, shared strict site-name
 normalization, and versioned consistency-checked extraction for desktop and
 Agent responses. The Agent reply gains its own `version` field; this is separate
 from `ENVELOPE_VERSION`, which tracks the desktop response envelope.
@@ -50,18 +56,15 @@ Two conditions, both necessary:
    relies on changed shape or disappeared, so a mismatched major is refused
    outright, in either direction.
 2. **The module must be at least as new, minor-wise, as the host.** A host
-   built against `(2, 29)` expects at least the members and fields that
-   existed at `(2, 29)`. A module reporting `(2, 28)` lacks the typed
-   `ComputerConfig` and versioned response extraction, so a 2.29 host rejects
-   it. A module reporting `(2, 26)` lacks host-context relay for
-   `ConsequenceHost`, and one reporting `(2, 25)` predates the `TraceSinkHost`
-   callback added in 2.26. A newer module with the same major is accepted.
+   built against `(3, 0)` expects at least the members and fields that
+   existed at `(3, 0)`. A newer module with the same major is accepted. On
+   the 2.x line, for example, a 2.29 host rejected a `(2, 28)` module, which
+   lacked the typed `ComputerConfig` and versioned response extraction.
 
 ```rust,ignore
-assert!(is_compatible(CONTRACT_VERSION));   // (2, 29), the exact version this crate ships
-assert!(is_compatible((2, 30)));            // a newer, still-compatible module
-assert!(!is_compatible((2, 11)));            // an older module, missing something
-assert!(!is_compatible((2, 26)));            // predates ConsequenceHost host-context relay
+assert!(is_compatible(CONTRACT_VERSION));   // (3, 0), the exact version this crate ships
+assert!(is_compatible((3, 1)));             // a newer, still-compatible module
+assert!(!is_compatible((2, 29)));           // a different major: plain BrowserReadOutput
 assert!(!is_compatible((1, 10)));           // a different major, all bets off
 ```
 

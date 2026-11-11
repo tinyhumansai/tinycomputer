@@ -750,7 +750,9 @@ impl DesktopService {
         ))
     }
 
-    /// Reads one chunk of a held output.
+    /// Reads one chunk of a held output. Confidential: a screenshot can show
+    /// what a task typed, card details included.
+    #[tinybus(confidential)]
     async fn browser_read_output(
         &self,
         request: ReadOutputRequest,

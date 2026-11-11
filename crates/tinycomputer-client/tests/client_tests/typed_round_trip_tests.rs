@@ -41,17 +41,16 @@ async fn typed_accessibility_browser_profile_task_and_held_output_calls_round_tr
         .await?;
     assert_eq!(navigated.url, "https://example.com");
 
+    // A held output's bytes travel only confidentially, which this
+    // unattested recipient cannot take.
     let chunk = client
         .call_desktop::<_, OutputChunk>(
             &config,
             tinycomputer_bus::browser::names::methods::READ_OUTPUT,
             ReadOutputRequest::new(OutputId::new("held-image-1")),
         )
-        .await?;
-    assert_eq!(chunk.id.as_str(), "held-image-1");
-    assert_eq!(chunk.offset, 0);
-    assert_eq!(chunk.data, "aGVsbG8=");
-    assert!(chunk.eof);
+        .await;
+    assert!(matches!(chunk, Err(ClientError::Bus(_))));
 
     let planned = client
         .call_task::<_, Value>(
@@ -70,7 +69,6 @@ async fn typed_accessibility_browser_profile_task_and_held_output_calls_round_tr
     for member in [
         tinycomputer_bus::browser::names::methods::CLAIM_PROFILE,
         tinycomputer_bus::browser::names::methods::NAVIGATE,
-        tinycomputer_bus::browser::names::methods::READ_OUTPUT,
         task_names::methods::PLAN_TASK,
     ] {
         let observed = seen
@@ -98,15 +96,10 @@ async fn typed_accessibility_browser_profile_task_and_held_output_calls_round_tr
         .ok_or_else(|| std::io::Error::other("navigation request was not observed"))?;
     assert_eq!(navigation.args[0]["session"], "session-1");
     assert_eq!(navigation.args[0]["url"], "https://example.com");
-    let held_output = seen
-        .iter()
-        .find(|call| call.member == tinycomputer_bus::browser::names::methods::READ_OUTPUT)
-        .ok_or_else(|| std::io::Error::other("held-output request was not observed"))?;
-    assert_eq!(held_output.args[0]["output"], "held-image-1");
-    assert_eq!(held_output.args[0]["offset"], 0);
-    assert_eq!(
-        held_output.args[0]["max_len"],
-        ReadOutputRequest::DEFAULT_LEN
+    assert!(
+        seen.iter()
+            .all(|call| call.member != tinycomputer_bus::browser::names::methods::READ_OUTPUT),
+        "the refused read never reached the service"
     );
 
     assert_eq!(RUN_GOAL_TIMEOUT, Duration::from_secs(330));

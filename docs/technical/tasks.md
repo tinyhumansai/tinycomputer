@@ -70,7 +70,8 @@ The browser session stays open on the payment page so a person can finish.
 `CancelTask` releases it afterwards. `TaskReport` (confidential) returns every
 step report, the records the task read or extracted, the trace, the grounding
 hints it learned, and `artifacts`: the best-effort screenshot each stopped run
-took before its surfaces were released, read with `BrowserReadOutput` within
+took before its surfaces were released, read with the confidential
+`BrowserReadOutput` within
 five minutes. No status carries a screenshot, since views also reach the
 non-confidential `AwaitTask` and `ListTasks`.
 

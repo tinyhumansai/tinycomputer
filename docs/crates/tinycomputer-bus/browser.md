@@ -285,13 +285,15 @@ let clicked: DesktopResponse = proxy
 
 let shot: DesktopResponse = proxy.call(methods::SCREENSHOT, (json!({"session": session}),)).await?;
 let output = shot.data.as_ref().unwrap()["id"].clone();
+// BrowserReadOutput is confidential: the bytes never travel in a plain frame.
 let chunk: DesktopResponse = proxy
-    .call(methods::READ_OUTPUT, (json!({"output": output}),))
+    .call_confidential(methods::READ_OUTPUT, (json!({"output": output}),))
     .await?;
 ```
 
 (`crates/tinycomputer/src/tinybus_module/tinybus_module_tests/browser_tests.rs` runs this same
-sequence against the in-memory bus.)
+sequence against the in-memory bus. That module is never attested, so it reads
+the output from the service directly, and checks that a plain call is refused.)
 
 ## Where the browser fits into flows and tasks
 

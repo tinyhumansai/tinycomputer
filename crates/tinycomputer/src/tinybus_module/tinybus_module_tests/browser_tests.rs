@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::{Value, json};
 use tinybus::broker::Broker;
 use tinybus::transport::memory::MemoryBus;
-use tinybus::{Connection, Proxy};
+use tinybus::{Connection, Interface, Proxy};
 use tinycomputer_browser::{Browser, Engine, Launcher, Reply};
 use tinycomputer_bus::browser::names::methods;
 use tinycomputer_bus::{DeliveryDisposition, DesktopResponse, names};
@@ -97,10 +97,18 @@ async fn serve_with(
     config: &Value,
     launcher: Arc<ScriptedLauncher>,
 ) -> tinybus::Result<(Connection, Proxy)> {
+    serve_on(
+        config,
+        Arc::new(Browser::with_scratch(launcher, scratch.0.clone())),
+    )
+    .await
+}
+
+/// Serves a service configured by `config` on `browser`.
+async fn serve_on(config: &Value, browser: Arc<Browser>) -> tinybus::Result<(Connection, Proxy)> {
     let bus = MemoryBus::new();
     Broker::new().spawn(bus.clone());
 
-    let browser = Arc::new(Browser::with_scratch(launcher, scratch.0.clone()));
     let service = DesktopService::with_browser(config, browser).expect("the config is valid");
     let server = Connection::connect(bus.connect().await?).await?;
     server
@@ -117,6 +125,17 @@ async fn serve_with(
 
 async fn call(proxy: &Proxy, member: &str, request: Value) -> tinybus::Result<DesktopResponse> {
     proxy.call(member, (request,)).await
+}
+
+/// Calls `BrowserReadOutput` on `service` directly. It is confidential, and the
+/// in-memory module is never attested, so the bus would refuse it.
+async fn read_output(service: &DesktopService, request: Value) -> tinybus::Result<DesktopResponse> {
+    let member = methods::READ_OUTPUT.try_into()?;
+    assert!(service.requires_confidential(&member));
+    Ok(
+        serde_json::from_value(service.call(&member, json!([request])).await?)
+            .expect("an envelope"),
+    )
 }
 
 fn data(reply: &DesktopResponse) -> &Value {
@@ -166,7 +185,13 @@ async fn a_session_runs_open_navigate_click_and_close_over_the_bus() -> tinybus:
 #[tokio::test]
 async fn a_screenshot_is_read_back_in_chunks_and_released() -> tinybus::Result<()> {
     let scratch = Scratch::new("shot");
-    let (_server, proxy) = serve(&scratch).await?;
+    let browser = Arc::new(Browser::with_scratch(
+        Arc::new(ScriptedLauncher::default()),
+        scratch.0.clone(),
+    ));
+    let (_server, proxy) = serve_on(&json!({}), browser.clone()).await?;
+    // A second service on the same browser sees the same held outputs.
+    let direct = DesktopService::with_browser(&json!({}), browser).expect("the config is valid");
     let opened = call(&proxy, methods::OPEN_SESSION, json!({})).await?;
     let session = data(&opened)["id"].clone();
 
@@ -174,24 +199,17 @@ async fn a_screenshot_is_read_back_in_chunks_and_released() -> tinybus::Result<(
     let output = data(&shot)["id"].clone();
     assert_eq!(data(&shot)["total_bytes"], 14);
 
-    let first = call(
-        &proxy,
-        methods::READ_OUTPUT,
-        json!({"output": output, "max_len": 8}),
-    )
-    .await?;
+    call(&proxy, methods::READ_OUTPUT, json!({"output": output}))
+        .await
+        .expect_err("the bytes never cross the bus in a plain frame");
+    let first = read_output(&direct, json!({"output": output, "max_len": 8})).await?;
     assert_eq!(data(&first)["eof"], false);
-    let rest = call(
-        &proxy,
-        methods::READ_OUTPUT,
-        json!({"output": output, "offset": 8}),
-    )
-    .await?;
+    let rest = read_output(&direct, json!({"output": output, "offset": 8})).await?;
     assert_eq!(data(&rest)["eof"], true);
 
     let released = call(&proxy, methods::RELEASE_OUTPUT, json!({"output": output})).await?;
     assert_eq!(data(&released)["released"], true);
-    let gone = call(&proxy, methods::READ_OUTPUT, json!({"output": output})).await?;
+    let gone = read_output(&direct, json!({"output": output})).await?;
     let error = gone.error.expect("a released output is gone");
     assert_eq!(error.code, "OUTPUT_NOT_FOUND");
     assert!(error.suggestion.is_some());

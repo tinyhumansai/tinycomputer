@@ -247,7 +247,8 @@ ten seconds). `CancelTask` releases at once without one; take a
 only — never on a status's `screenshot`, because a `TaskView` also travels
 through `AwaitTask` and `ListTasks`, which are not confidential, and a held
 output's id is all `BrowserReadOutput` needs. Read it with
-`BrowserReadOutput` within five minutes, before it expires.
+`BrowserReadOutput`, a confidential call, within five minutes, before it
+expires.
 
 Each `Rescue` records one time a failed step was handed to a reasoning model
 for a second opinion:
