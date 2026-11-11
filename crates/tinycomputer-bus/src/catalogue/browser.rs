@@ -64,7 +64,7 @@ pub(super) const BROWSER: &[Member] = &[
         browser::READ_OUTPUT,
         Family::Browser,
         "Reads one base64 chunk of a held screenshot or PDF.",
-        false,
+        true,
     ),
     entry(
         browser::RELEASE_OUTPUT,

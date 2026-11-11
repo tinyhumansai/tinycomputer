@@ -381,10 +381,11 @@ impl Host {
     }
 
     /// A held output's bytes — a screenshot this host took, or one a task
-    /// report names: `BrowserReadOutput` chunk by chunk until the end, then
-    /// `BrowserReleaseOutput`, the handle protocol a host follows. After a
-    /// transport failure the output is kept, so a retry can still read it
-    /// before it expires; after any other failure it is released.
+    /// report names: `BrowserReadOutput` (a confidential call) chunk by chunk
+    /// until the end, then `BrowserReleaseOutput`, the handle protocol a host
+    /// follows. After a transport failure the output is kept, so a retry can
+    /// still read it before it expires; after any other failure it is
+    /// released.
     ///
     /// # Errors
     ///
@@ -425,7 +426,7 @@ impl Host {
             };
             let reply = self
                 .proxy
-                .call(methods::READ_OUTPUT, (request,))
+                .call_confidential(methods::READ_OUTPUT, (request,))
                 .await
                 .map_err(|error| Unread::Transport(error.into()))?;
             let chunk: OutputChunk = data(reply).map_err(Unread::Invalid)?;

@@ -196,7 +196,7 @@ for the engine underneath.
 
 ## Confidential members
 
-Six members are marked `#[tinybus(confidential)]` in
+These members, among others, are marked `#[tinybus(confidential)]` in
 `crates/tinycomputer/src/tinybus_module/dispatch/mod.rs`:
 
 - `ResolveIntent`
@@ -205,10 +205,11 @@ Six members are marked `#[tinybus(confidential)]` in
 - `StartTask`
 - `ContinueTask`
 - `TaskReport`
+- `BrowserReadOutput`
 
 TinyBus treats a confidential call as sensitive host-control traffic rather
 than ordinary bus chatter, the same category the module's own configuration
-travels in. These six are the ones marked that way because of what they can
+travels in. They are marked that way because of what they can
 carry or reveal:
 
 - `ResolveIntent`, `RunGoal`, and `RunFlow` are the members that actually
@@ -223,6 +224,10 @@ carry or reveal:
 - `TaskReport` is confidential because it is the member that hands back
   everything a task did, potentially including the full Jev exchange trace
   when the task requested one.
+- `BrowserReadOutput` returns the bytes of a held screenshot, and a
+  screenshot can show what a task typed into a form, card details included.
+  `BrowserScreenshot` and `BrowserReleaseOutput` stay ordinary: they carry
+  only the output's id.
 
 The other two task members that touch a running task, `AwaitTask` and
 `CancelTask`, are not confidential: they carry or return only a task id and

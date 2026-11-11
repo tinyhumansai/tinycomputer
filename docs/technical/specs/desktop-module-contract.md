@@ -336,3 +336,13 @@ identifies a host-owned compatible route in the non-secret model summary; the
 module's private TinyBus model configuration still accepts only its fixed
 provider endpoints. Rust embedding hosts may supply arbitrary model and Jev
 endpoints directly.
+
+## Confidential output reads (3.0)
+
+- `BrowserReadOutput` is `#[tinybus(confidential)]`, and its catalogue entry
+  says so. A held output is a screenshot that can show what a task typed,
+  card details included; its `TaskReport` handle was already confidential, so
+  the bytes now are too.
+- Every plain call to it fails, so this is a major bump. A host reads outputs
+  with a confidential call to an attested module. `BrowserScreenshot` and
+  `BrowserReleaseOutput` stay ordinary: they carry an id, never the bytes.

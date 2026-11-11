@@ -6,7 +6,7 @@ use super::{CONTRACT_VERSION, binds, is_compatible};
 
 #[test]
 fn the_shipped_contract_version_is_pinned() {
-    assert_eq!(CONTRACT_VERSION, (2, 29));
+    assert_eq!(CONTRACT_VERSION, (3, 0));
 }
 
 #[test]
@@ -16,8 +16,9 @@ fn the_contract_binds_to_itself() {
 
 #[test]
 fn a_newer_minor_on_the_module_side_binds() {
-    assert!(is_compatible((2, 29)));
-    assert!(is_compatible((2, 97)));
+    assert!(is_compatible((3, 0)));
+    assert!(is_compatible((3, 97)));
+    // The history below is the 2.x line, which 3.0 no longer binds at all.
     // 2.24 adds same-task flow-to-planner handoff to StartTask.
     // 2.22 adds optional host-held secret handles to StartTask and RunFlow.
     // A host-only handle is ignored by older modules, which then refuse it
@@ -99,5 +100,8 @@ fn a_different_major_is_rejected() {
     // 2.0 renamed the interface from `tinydesktop` to `tinycomputer`: a
     // 1.x host calls names a 2.x module does not serve.
     assert!(!is_compatible((1, 8)));
-    assert!(!is_compatible((3, 0)));
+    // 3.0 makes BrowserReadOutput confidential: a 2.x host reads held
+    // screenshots in plain frames, which a 3.0 module refuses.
+    assert!(!is_compatible((2, 29)));
+    assert!(!is_compatible((4, 0)));
 }

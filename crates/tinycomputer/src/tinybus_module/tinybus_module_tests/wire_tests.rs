@@ -198,7 +198,6 @@ fn wire_sweep() -> Vec<(&'static str, serde_json::Value)> {
             json!([{ "session": "s-0", "expression": "1" }]),
         ),
         (browser_methods::SCREENSHOT, no_session.clone()),
-        (browser_methods::READ_OUTPUT, no_output.clone()),
         (browser_methods::RELEASE_OUTPUT, no_output),
         (browser_methods::LIST_DOWNLOADS, no_session.clone()),
         (browser_methods::WAIT_DOWNLOAD, no_session),
@@ -270,6 +269,9 @@ fn the_wire_sweep_covers_every_member_except_the_one_with_no_safe_input() {
             // stop that lease again without carrying the returned handle.
             &names::accessibility::GLOBE_START,
             &browser_methods::OPEN_SESSION,
+            // Confidential: the unattested in-memory module cannot take it;
+            // `browser_tests.rs` reads outputs from the service directly.
+            &browser_methods::READ_OUTPUT,
             // Every valid claim touches the filesystem; `browser_tests.rs`
             // exercises these two over the bus.
             &browser_methods::CLAIM_PROFILE,

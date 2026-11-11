@@ -46,7 +46,7 @@ Tasks are the way in; the primitives are there when you need to look or act dire
 
 - `BrowserListSessions` shows every open browser session, a running task's included.
 - `BrowserOpenSession`, then `BrowserNavigate` and `BrowserSnapshot` with `{"session": id, …}`; act on a ref with `BrowserPerform`, such as `{"session": "s-1", "action": "click", "target": {"kind": "ref", "value": "e3"}}`.
-- `BrowserScreenshot` returns an output id, not an image: read it with `BrowserReadOutput` from `offset` 0 until `eof`, then `BrowserReleaseOutput`. The same works for a screenshot in `TaskReport.artifacts`: a task keeps one each time it stops, and a task view never carries one.
+- `BrowserScreenshot` returns an output id, not an image: read it with `BrowserReadOutput` (a confidential call) from `offset` 0 until `eof`, then `BrowserReleaseOutput`. The same works for a screenshot in `TaskReport.artifacts`: a task keeps one each time it stops, and a task view never carries one.
 - `BrowserCloseSession` when you are done with a session you opened; leave a task's session to the task.
 
 ## Writing flows that work
