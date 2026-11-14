@@ -38,7 +38,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 pub use page::BrowserCaptchaPage;
-pub use scan::{CaptchaRole, CaptchaScan, CaptchaVendor, CaptchaWidget, Rect};
+pub use scan::{CaptchaRole, CaptchaScan, CaptchaVendor, CaptchaWidget, Rect, Viewport};
 pub use solve::solve_captcha;
 
 /// The default number of challenges the solver submits before handing the
