@@ -55,11 +55,11 @@ tinycomputer-accessibility = { path = "crates/tinycomputer-accessibility" }
 # crate of the vendored `vendor/tinyinference` submodule, pinned by its gitlink
 # so provider validation and retry behavior are reproducible. Only this crate
 # of TinyInference is linked into the module.
-tinyinference-decisions = { git = "https://github.com/tinyhumansai/tinyinference", rev = "26af7607d3759f0e6096d3ba8fd3bbd9d1589821" }
+tinyinference-decisions = { git = "https://github.com/tinyhumansai/tinyinference", rev = "8a16bfdf4a1407a267585289f6782d77694ffdd6" }
 # The optional LLM planner's model client (engine `planner` feature) and the
 # lab's author. Naming the shared source lets a host workspace redirect it to
 # its single TinyInference copy; standalone builds use the local patch below.
-tinyinference-llm = { git = "https://github.com/tinyhumansai/tinyinference", rev = "26af7607d3759f0e6096d3ba8fd3bbd9d1589821" }
+tinyinference-llm = { git = "https://github.com/tinyhumansai/tinyinference", rev = "8a16bfdf4a1407a267585289f6782d77694ffdd6" }
 # The browser automation engine, linked as a library: `execute_command` over a
 # `DaemonState`. Vendored from the tinyhumansai fork until
 # vercel-labs/agent-browser#2008 lands upstream.
