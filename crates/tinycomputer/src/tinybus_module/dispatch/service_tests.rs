@@ -84,20 +84,22 @@ async fn a_host_executable_beside_egress_loads_the_enforced_service() {
 
 #[test]
 fn a_captcha_section_brings_a_solver_on_an_image_reading_model() {
-    let service = DesktopService::from_config(&json!({
+    DesktopService::from_config(&json!({
         "captcha": {"jev": {"api_key": "k"}, "max_attempts": 5}
     }))
     .expect("a captcha route is accepted");
-    let runner = service.tasks.runner_for_tests();
-    let (runtime, settings) = runner.expect("a runner");
+
+    let config: tinycomputer_bus::config::CaptchaConfig =
+        serde_json::from_value(json!({"jev": {"api_key": "k"}, "max_attempts": 5}))
+            .expect("captcha config");
+    let (runtime, settings) = super::captcha_solver(&config).expect("a solver");
     assert_eq!(runtime.configuration().model, "jev-preview");
     assert_eq!(settings.max_attempts, 5);
 
-    let service = DesktopService::from_config(&json!({
-        "captcha": {"jev": {"api_key": "k", "model": "jev-2"}}
-    }))
-    .expect("a named model is kept");
-    let (runtime, settings) = service.tasks.runner_for_tests().expect("a runner");
+    let config: tinycomputer_bus::config::CaptchaConfig =
+        serde_json::from_value(json!({"jev": {"api_key": "k", "model": "jev-2"}}))
+            .expect("captcha config");
+    let (runtime, settings) = super::captcha_solver(&config).expect("a solver");
     assert_eq!(runtime.configuration().model, "jev-2");
     assert_eq!(settings.max_attempts, 3);
 }
