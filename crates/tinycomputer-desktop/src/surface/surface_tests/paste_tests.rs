@@ -143,12 +143,9 @@ impl PasteSteps for Steps {
     }
     fn clipboard_set(&self, request: ClipboardSetRequest) -> DesktopResponse {
         let staging = request.text.as_deref() == Some("typed");
-        self.note(if staging { "stage" } else { "restore" });
-        Self::reply(if staging {
-            self.stage_ok
-        } else {
-            self.restore_ok
-        })
+        let step = if staging { "stage" } else { "restore" };
+        self.note(step);
+        self.works(step)
     }
     fn clipboard_clear(&self) -> DesktopResponse {
         self.note("clear");
