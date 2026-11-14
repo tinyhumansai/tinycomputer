@@ -134,3 +134,30 @@ fn computer_config_rejects_null_sections_but_keeps_nullable_trace_path() {
         serde_json::from_value(json!({"trace_path": null})).expect("legacy null trace path");
     assert!(config.trace_path.is_none());
 }
+
+#[test]
+fn a_captcha_section_pins_its_wire_form_and_redacts_its_key() {
+    let config: ComputerConfig = serde_json::from_value(json!({
+        "captcha": {"jev": {"api_key": "secret-key", "model": "jev-preview"}, "max_attempts": 4}
+    }))
+    .unwrap();
+    let captcha = config.captcha.as_ref().unwrap();
+    assert_eq!(captcha.max_attempts, Some(4));
+    assert_eq!(captcha.jev.api_key(), "secret-key");
+    assert_eq!(captcha.jev.model.as_deref(), Some("jev-preview"));
+    assert!(!format!("{config:?}").contains("secret-key"));
+    let wire = serde_json::to_value(&config).unwrap();
+    assert_eq!(wire["captcha"]["max_attempts"], 4);
+    assert_eq!(
+        serde_json::from_value::<ComputerConfig>(wire).unwrap(),
+        config
+    );
+    assert!(
+        serde_json::to_value(ComputerConfig::default())
+            .unwrap()
+            .get("captcha")
+            .is_none()
+    );
+    assert!(serde_json::from_value::<ComputerConfig>(json!({"captcha": null})).is_err());
+    assert_eq!(super::DEFAULT_CAPTCHA_MODEL, "jev-preview");
+}
