@@ -186,6 +186,9 @@ fn sage_question(id: &str, question: &Question) -> Result<DecisionQuestion, Stri
                     .collect(),
             }
         }
+        Question::Box(_) => {
+            return Err(format!("box `{id}` needs Jev; Sage cannot locate in an image"));
+        }
     })
 }
 
