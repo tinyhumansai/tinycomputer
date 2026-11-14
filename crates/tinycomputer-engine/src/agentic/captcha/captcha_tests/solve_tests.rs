@@ -303,3 +303,28 @@ async fn a_page_that_cannot_be_photographed_is_not_guessed_at() {
     assert!(asked.lock().unwrap().is_empty());
     assert_eq!(page.presses(), [] as [(f64, f64); 0]);
 }
+
+#[tokio::test]
+async fn a_checkbox_that_already_holds_its_token_is_skipped_for_the_next_one() {
+    let mut done = checkbox();
+    done.answered = true;
+    let waiting = widget(CaptchaRole::Checkbox, 20.0, 200.0, 304.0, 78.0);
+    let page = ScriptedPage::new(vec![
+        Some(scan(vec![done.clone(), waiting.clone()], false)),
+        Some(scan(vec![done, waiting], true)),
+    ]);
+    let (jev, _) = jev(|_| {
+        Some(BTreeMap::from([(
+            "checkbox".to_owned(),
+            found(0.05, 0.3, 0.15, 0.7, 0.8),
+        )]))
+    });
+    let outcome = solve_captcha(&page, &jev, &CaptchaSettings::default(), &|| true).await;
+    assert_eq!(outcome, CaptchaOutcome::Solved { attempts: 0 });
+    let presses = page.presses();
+    assert_eq!(presses.len(), 1);
+    assert!(
+        presses[0].1 > 200.0,
+        "the waiting checkbox was pressed: {presses:?}"
+    );
+}

@@ -39,11 +39,6 @@ pub(super) const SCAN_SCRIPT: &str = r#"(() => {
     const box = found.find((w) => w.role === "checkbox" && shown(w.el));
     if (box && !inView(box.el.getBoundingClientRect())) box.el.scrollIntoView({ block: "center" });
   }
-  const widgets = found.map(({ vendor, role, el }) => {
-    const r = el.getBoundingClientRect();
-    return { vendor, role, visible: shown(el) && inView(r),
-      rect: { x: r.left, y: r.top, width: r.width, height: r.height } };
-  });
   const names = ["g-recaptcha-response", "h-captcha-response", "cf-turnstile-response"];
   const filled = (field) => typeof field.value === "string" && field.value.length > 0;
   // A widget's own response field sits beside its frame, so look only in the
@@ -56,6 +51,12 @@ pub(super) const SCAN_SCRIPT: &str = r#"(() => {
     }
     return false;
   };
+  const widgets = found.map(({ vendor, role, el }) => {
+    const r = el.getBoundingClientRect();
+    return { vendor, role, visible: shown(el) && inView(r),
+      answered: role === "checkbox" && holdsToken(el),
+      rect: { x: r.left, y: r.top, width: r.width, height: r.height } };
+  });
   const anyToken = names.some((name) => Array.from(document.getElementsByName(name)).some(filled));
   const solved = anyToken
     && found.filter((w) => w.role === "checkbox" && shown(w.el)).every((w) => holdsToken(w.el));
@@ -106,6 +107,10 @@ pub struct CaptchaWidget {
     pub role: CaptchaRole,
     /// Whether it is shown, whole, inside the viewport.
     pub visible: bool,
+    /// Whether a checkbox already has a token of its own, so the solver
+    /// moves on to the next one. Always `false` for a challenge.
+    #[serde(default)]
+    pub answered: bool,
     /// Where it is.
     pub rect: Rect,
 }
@@ -137,11 +142,11 @@ impl CaptchaScan {
         (scan.viewport.width > 0.0 && scan.viewport.height > 0.0).then_some(scan)
     }
 
-    /// The first shown widget playing `role`.
+    /// The first shown widget playing `role` that still waits for an answer.
     #[must_use]
     pub fn visible(&self, role: CaptchaRole) -> Option<&CaptchaWidget> {
         self.widgets
             .iter()
-            .find(|widget| widget.role == role && widget.visible)
+            .find(|widget| widget.role == role && widget.visible && !widget.answered)
     }
 }

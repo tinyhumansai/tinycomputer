@@ -37,6 +37,7 @@ fn widget(role: CaptchaRole, x: f64, y: f64, width: f64, height: f64) -> Captcha
         vendor: CaptchaVendor::Recaptcha,
         role,
         visible: true,
+        answered: false,
         rect: Rect {
             x,
             y,
