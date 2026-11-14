@@ -415,12 +415,11 @@ pub(super) const fn approved_endpoint(provider: JevProvider) -> &'static str {
 pub(super) fn trusted_endpoint(provider: JevProvider, endpoint: &str) -> bool {
     let approved = approved_endpoint(provider);
     // Sage's endpoint is its API root, so its trailing slash is optional.
-    let exact = endpoint == approved
+    let trusted = endpoint == approved
         || (provider == JevProvider::Sage && endpoint == approved.trim_end_matches('/'));
     #[cfg(test)]
-    return exact || endpoint.starts_with("http://127.0.0.1:");
-    #[cfg(not(test))]
-    exact
+    let trusted = trusted || endpoint.starts_with("http://127.0.0.1:");
+    trusted
 }
 
 /// The HTTP client configuration for a Jev `request`: its provider's

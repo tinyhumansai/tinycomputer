@@ -1,7 +1,7 @@
 //! Tests for browser launch command rewriting and policy refusal.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use super::super::{AMBIENT_BROWSER_ENV, enforce_launch_with_config};
+use super::super::{AMBIENT_BROWSER_ENV, HostBrowser, enforce_launch_with_config};
 use serde_json::json;
 
 #[test]
@@ -11,7 +11,7 @@ fn enforced_launch_uses_only_the_host_proxy_and_network_containment_flags() {
         "http://127.0.0.1:39123",
         "session-secret",
         false,
-        None,
+        &HostBrowser::default(),
     )
     .expect("enforced launch");
     assert_eq!(launch["proxy"]["server"], "http://127.0.0.1:39123");
@@ -36,7 +36,7 @@ fn enforced_launch_refuses_external_cdp_and_caller_flags() {
         "http://127.0.0.1:39123",
         "session-secret",
         false,
-        None,
+        &HostBrowser::default(),
     );
     assert!(cdp.is_err());
     let args = enforce_launch_with_config(
@@ -44,7 +44,7 @@ fn enforced_launch_refuses_external_cdp_and_caller_flags() {
         "http://127.0.0.1:39123",
         "session-secret",
         false,
-        None,
+        &HostBrowser::default(),
     );
     assert!(args.is_err());
     let executable = enforce_launch_with_config(
@@ -52,7 +52,7 @@ fn enforced_launch_refuses_external_cdp_and_caller_flags() {
         "http://127.0.0.1:39123",
         "session-secret",
         false,
-        None,
+        &HostBrowser::default(),
     );
     assert!(executable.is_err());
     let ambient = enforce_launch_with_config(
@@ -60,7 +60,7 @@ fn enforced_launch_refuses_external_cdp_and_caller_flags() {
         "http://127.0.0.1:39123",
         "session-secret",
         true,
-        None,
+        &HostBrowser::default(),
     );
     assert!(ambient.is_err());
 }
@@ -92,7 +92,7 @@ fn enforced_launch_refuses_caller_plugins_extensions_and_init_scripts() {
                 "http://127.0.0.1:39123",
                 "session-secret",
                 false,
-                None,
+                &HostBrowser::default(),
             )
             .is_err(),
             "{field} was accepted"
@@ -111,7 +111,7 @@ fn a_host_executable_launches_under_the_enforced_proxy() {
             "http://127.0.0.1:39123",
             "session-secret",
             false,
-            Some("/opt/host/chrome"),
+            &HostBrowser::executable("/opt/host/chrome"),
         )
         .expect("host executable launches");
         assert_eq!(launch["executablePath"], "/opt/host/chrome");
@@ -138,7 +138,10 @@ fn a_request_cannot_name_an_executable_the_host_did_not_configure() {
                 "http://127.0.0.1:39123",
                 "session-secret",
                 false,
-                host,
+                &HostBrowser {
+                    executable: host.map(str::to_owned),
+                    profile: None,
+                },
             )
             .is_err(),
             "{requested} with host {host:?}"
@@ -151,8 +154,87 @@ fn a_request_cannot_name_an_executable_the_host_did_not_configure() {
             "http://127.0.0.1:39123",
             "session-secret",
             true,
-            Some("/opt/host/chrome"),
+            &HostBrowser::executable("/opt/host/chrome"),
         )
         .is_err()
     );
+}
+
+fn host_profile() -> HostBrowser {
+    HostBrowser {
+        executable: Some("/opt/host/chrome".into()),
+        profile: Some("/srv/state/browser/profile".into()),
+    }
+}
+
+/// The host's own profile folder keeps cookies and sign-ins between
+/// sessions; it launches under the proxy with extensions off, so nothing
+/// stored in the profile can install a proxy of its own.
+#[test]
+fn a_host_profile_launches_under_the_enforced_proxy_without_extensions() {
+    for command in [
+        json!({"action":"launch"}),
+        json!({"action":"launch","profile":"/srv/state/browser/profile"}),
+    ] {
+        let launch = enforce_launch_with_config(
+            command.clone(),
+            "http://127.0.0.1:39123",
+            "session-secret",
+            false,
+            &host_profile(),
+        )
+        .expect("host profile launches");
+        let args = launch["args"].as_array().expect("args");
+        assert_eq!(
+            args.contains(&json!("--disable-extensions")),
+            command.get("profile").is_some(),
+            "{command}"
+        );
+        assert_eq!(launch["proxy"]["server"], "http://127.0.0.1:39123");
+        // The profile is used only when the session asked for it: a session
+        // that named none still starts fresh.
+        assert_eq!(launch.get("profile"), command.get("profile"));
+    }
+}
+
+#[test]
+fn a_request_cannot_name_a_profile_the_host_did_not_configure() {
+    for (requested, host) in [
+        (json!("/tmp/attacker-profile"), host_profile()),
+        (json!(7), host_profile()),
+        (json!("/srv/state/browser/profile"), HostBrowser::default()),
+        (
+            json!("/srv/state/browser/profile"),
+            HostBrowser::executable("/opt/host/chrome"),
+        ),
+    ] {
+        assert!(
+            enforce_launch_with_config(
+                json!({"action":"launch","profile":requested}),
+                "http://127.0.0.1:39123",
+                "session-secret",
+                false,
+                &host,
+            )
+            .is_err(),
+            "{requested} with host {:?}",
+            host.profile
+        );
+    }
+    // The host profile does not lift the other refusals.
+    for field in ["storageState", "restore", "cdpUrl"] {
+        let mut command = json!({"action":"launch","profile":"/srv/state/browser/profile"});
+        command[field] = json!("x");
+        assert!(
+            enforce_launch_with_config(
+                command,
+                "http://127.0.0.1:39123",
+                "session-secret",
+                false,
+                &host_profile(),
+            )
+            .is_err(),
+            "{field}"
+        );
+    }
 }

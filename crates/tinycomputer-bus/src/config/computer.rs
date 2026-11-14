@@ -38,7 +38,7 @@ pub struct ComputerConfig {
     )]
     pub browser: Option<BrowserConfig>,
     /// The captcha solver tasks try before asking a person, when configured
-    /// (contract 3.1).
+    /// (contract 3.2).
     #[serde(
         default = "missing_option",
         deserialize_with = "deserialize_present_option",

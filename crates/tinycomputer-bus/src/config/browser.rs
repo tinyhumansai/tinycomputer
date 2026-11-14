@@ -34,6 +34,12 @@ pub struct BrowserConfig {
     /// The Chrome or Chromium executable to launch, if the host selected one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub executable: Option<String>,
+    /// The Chrome profile folder (an absolute path) the host keeps between
+    /// sessions, so cookies and sign-ins survive a restart. Host control,
+    /// like `executable`: under an egress policy a launch may name this
+    /// folder and no other.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
     /// The User-Agent sent by every launched browser, when set.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_agent: Option<String>,
@@ -55,6 +61,7 @@ impl Default for BrowserConfig {
     fn default() -> Self {
         Self {
             executable: None,
+            profile: None,
             user_agent: None,
             args: Vec::new(),
             perception: BrowserPerception::default(),
@@ -72,6 +79,7 @@ impl std::fmt::Debug for BrowserConfig {
                 "executable",
                 &self.executable.as_ref().map(|_| "[REDACTED]"),
             )
+            .field("profile", &self.profile.as_ref().map(|_| "[REDACTED]"))
             .field(
                 "user_agent",
                 &self.user_agent.as_ref().map(|_| "[REDACTED]"),

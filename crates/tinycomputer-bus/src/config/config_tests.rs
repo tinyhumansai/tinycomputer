@@ -86,6 +86,7 @@ fn browser_config_defaults_and_serializes_non_default_fields() {
 fn browser_config_debug_redacts_sensitive_values() {
     let config = BrowserConfig {
         executable: Some("/secret/chromium".into()),
+        profile: Some("/secret/profile".into()),
         user_agent: Some("private agent string".into()),
         args: vec!["--private-argument".into()],
         ..BrowserConfig::default()
@@ -93,6 +94,7 @@ fn browser_config_debug_redacts_sensitive_values() {
     let debug = format!("{config:?}");
 
     assert!(!debug.contains("/secret/chromium"));
+    assert!(!debug.contains("/secret/profile"));
     assert!(!debug.contains("private agent string"));
     assert!(!debug.contains("--private-argument"));
     assert!(debug.contains("args_count: 1"));

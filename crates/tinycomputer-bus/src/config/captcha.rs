@@ -9,7 +9,7 @@ use crate::agentic::JevConfig;
 pub const DEFAULT_CAPTCHA_MODEL: &str = "jev-preview";
 
 /// The captcha solver a task tries before it asks a person to get past a
-/// captcha or a "prove you are human" check (contract 3.1).
+/// captcha or a "prove you are human" check (contract 3.2).
 ///
 /// Absent means no solver: such a check pauses the task as `needs_human`,
 /// as before. `jev` is its own decision route, since the solver needs a
