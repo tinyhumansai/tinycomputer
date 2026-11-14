@@ -57,6 +57,7 @@ pub use records::{
     rank, rank_closest,
 };
 pub use safety::{
-    Consequence, FieldHint, PaymentEvidence, adjusts_a_count, consequence, human_needed,
-    payment_evidence, screen_payment_evidence,
+    Consequence, FieldHint, PROVE_YOU_ARE_HUMAN, PaymentEvidence, SOLVE_THE_CAPTCHA,
+    adjusts_a_count, consequence, human_needed, is_bot_check, payment_evidence,
+    screen_payment_evidence,
 };
