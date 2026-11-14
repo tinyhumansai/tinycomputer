@@ -287,7 +287,7 @@ optional:
 | `egress` | Host-private TinySecurity scope. When present, `policy_id` and `generation` are required; browser `args`, attached DevTools endpoints, caller-supplied launch flags, and any executable or profile other than this section's `executable` and `profile` are refused. The scope is never a browser or task argument. |
 
 The launch and attach options above apply only when `egress` is absent, except
-`executable`. With `egress` set, TinyComputer owns the launch arguments and
+`executable` and `profile`. With `egress` set, TinyComputer owns the launch arguments and
 launches the host's `executable` (or the discovered Chrome) with its proxy and
 resolver flags. A task `browser_executable` or session `executable` may repeat
 the host's path; any other is refused, as are attached DevTools endpoints.
