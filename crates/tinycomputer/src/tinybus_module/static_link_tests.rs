@@ -35,6 +35,9 @@ async fn open_with_profile(user_data_dir: &str) -> tinycomputer_bus::DesktopResp
     host.attach_linked_with_config(
         super::linked_module().expect("manifest is valid"),
         serde_json::json!({"browser": {
+            // A binary that cannot start, so a permitted launch fails fast
+            // instead of looking for or starting a real Chrome.
+            "executable": "/nonexistent/host-chrome",
             "profile": "/srv/state/browser/profile",
             "egress": {"policy_id": "host-policy", "generation": 7}
         }}),
