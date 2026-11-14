@@ -126,7 +126,7 @@ async fn a_typed_challenge_is_unsupported_and_nothing_is_pressed() {
         matches!(&outcome, CaptchaOutcome::Unsupported { reason } if reason.contains("typed")),
         "{outcome:?}"
     );
-    assert!(page.presses().is_empty());
+    assert_eq!(page.presses(), [] as [(f64, f64); 0]);
 }
 
 #[tokio::test]
@@ -150,7 +150,7 @@ async fn a_jev_that_cannot_answer_leaves_the_captcha_unsolved() {
         matches!(&outcome, CaptchaOutcome::Unsolved { reason, .. } if reason.contains("could not read")),
         "{outcome:?}"
     );
-    assert!(page.presses().is_empty());
+    assert_eq!(page.presses(), [] as [(f64, f64); 0]);
 }
 
 #[tokio::test]
@@ -168,7 +168,7 @@ async fn a_jev_that_cannot_find_the_tiles_presses_nothing() {
         matches!(&outcome, CaptchaOutcome::Unsolved { reason, .. } if reason.contains("tiles")),
         "{outcome:?}"
     );
-    assert!(page.presses().is_empty());
+    assert_eq!(page.presses(), [] as [(f64, f64); 0]);
 }
 
 #[tokio::test]
@@ -222,5 +222,5 @@ async fn a_page_that_cannot_be_photographed_is_not_guessed_at() {
         "{outcome:?}"
     );
     assert!(asked.lock().unwrap().is_empty());
-    assert!(page.presses().is_empty());
+    assert_eq!(page.presses(), [] as [(f64, f64); 0]);
 }
