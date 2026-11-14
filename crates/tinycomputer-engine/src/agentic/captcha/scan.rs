@@ -12,8 +12,7 @@ use serde_json::Value;
 
 /// The script the scan evaluates in the top document. It scrolls a widget
 /// that is off screen and still unanswered into view, only when no challenge
-/// is showing, and
-/// otherwise changes nothing.
+/// is showing, and otherwise changes nothing.
 pub(super) const SCAN_SCRIPT: &str = r#"(() => {
   const kinds = [
     ["recaptcha", "checkbox", 'iframe[src*="/recaptcha/"][src*="/anchor"]'],
