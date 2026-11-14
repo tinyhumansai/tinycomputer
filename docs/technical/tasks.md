@@ -141,7 +141,10 @@ share that workspace, so a resumed task picks up on the page the last run left.
   see …", "log in or sign up", "login required"; a header's bare "Log in" and
   "Sign up" links are not one), the status becomes
   `needs_human` and `ContinueTask` reruns the failed step and the rest once
-  the person has got past it. If not, and a rescuer is configured, the failure
+  the person has got past it. A captcha or "verify you are human" check is
+  first handed to the runner's captcha solver, when the module has one
+  ([`specs/captcha-solver.md`](specs/captcha-solver.md)): solved, the failed
+  step runs again with no person asked; not, the `reason` says what was tried. If not, and a rescuer is configured, the failure
   is rescued (below). Otherwise it stays `failed`. A step that failed because
   no browser could be started (`BROWSER_UNAVAILABLE`) is never rescued: the
   task fails at once, not recoverable, with a hint to give the path of Chrome

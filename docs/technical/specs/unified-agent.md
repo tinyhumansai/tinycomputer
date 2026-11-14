@@ -35,9 +35,11 @@ vocabularies and two loops, and stitch them together itself.
 - Paying on its own. Payment details are typed only from secret facts and only
   under `payment: fill_then_approve`; the control that pays is always a
   checkpoint or an approval ([`jev-briefing.md`](jev-briefing.md)).
-- Solving captchas, or bypassing logins or two-factor prompts. They become
-  `needs_human`.
-- Vision models in the shipped module.
+- Bypassing logins or two-factor prompts. They become `needs_human`. A
+  captcha gets one bounded try by the opt-in solver first
+  ([`captcha-solver.md`](captcha-solver.md)), then becomes `needs_human`.
+- Vision models in the shipped module, beyond the captcha solver's image
+  questions.
 
 ## Architecture
 

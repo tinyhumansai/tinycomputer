@@ -77,6 +77,7 @@ has `""`, and goal and intent runs carry their goal or intent text.
 | `checkpoint` | a restorable press is about to run | `step`, `target`, `reversibility`, `location` |
 | `restore` | a mistake is undone | `step`, `rungs` (`back`, `navigate`, `press again`, `escape`), `restored`, `similarity` |
 | `backtrack` | the next-best candidate is tried after an undo | `step`, `candidate`, `confirmed`, `accepted` |
+| `captcha` | a task tried its captcha solver on a bot check (journaled by the task, beside its `resume` events) | `outcome` (`solved`, `unsolved`, `unsupported`, `unavailable`), `attempts`, `reason`; the solver's own Jev calls are `exchange` lines with step `captcha`, each image recorded by its length |
 | `denoise` | a `do` step's screen oscillates | `step`, `oscillation` (the presses banned) |
 | `step` | a flow step ends | `step`, `kind`, `text`, `outcome`, `note`, `turns`, `jev_calls`, `actions`, `loops`, `confidence`, `wall_ms` |
 | `end` | a flow run ends | `stop`, `wall_ms`, `actions`, `metrics`, `learned` |
