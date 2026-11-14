@@ -41,6 +41,7 @@ fn request() -> EvaluationRequest {
             ),
             ("page_kind".to_owned(), choice(&["product", "cart"], false)),
         ]),
+        assets: BTreeMap::new(),
     }
 }
 
@@ -471,6 +472,7 @@ async fn a_decision_ended_on_a_quorum_widens_past_every_framing_it_asked() {
             ("is_0".to_owned(), yes_no("is it the Send button?")),
             ("only_near_0".to_owned(), yes_no("is it only near it?")),
         ]),
+        assets: BTreeMap::new(),
     };
     run.ask(&mut log, vouching.clone()).await.unwrap();
     assert_eq!(

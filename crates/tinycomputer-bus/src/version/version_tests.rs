@@ -6,7 +6,7 @@ use super::{CONTRACT_VERSION, binds, is_compatible};
 
 #[test]
 fn the_shipped_contract_version_is_pinned() {
-    assert_eq!(CONTRACT_VERSION, (3, 1));
+    assert_eq!(CONTRACT_VERSION, (3, 2));
 }
 
 #[test]
@@ -16,10 +16,13 @@ fn the_contract_binds_to_itself() {
 
 #[test]
 fn a_newer_minor_on_the_module_side_binds() {
-    assert!(is_compatible((3, 1)));
+    assert!(is_compatible((3, 2)));
     assert!(is_compatible((3, 97)));
+    // 3.2 adds the optional `captcha` module configuration. A 3.1 module
+    // rejects it as unknown, so a 3.2 host cannot bind to one.
+    assert!(!is_compatible((3, 1)));
     // 3.1 adds the optional `browser.profile` module configuration field. A
-    // 3.0 module rejects it as unknown, so a 3.1 host cannot bind to one.
+    // 3.0 module rejects it as unknown.
     assert!(!is_compatible((3, 0)));
     // The history below is the 2.x line, which 3.0 no longer binds at all.
     // 2.24 adds same-task flow-to-planner handoff to StartTask.

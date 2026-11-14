@@ -293,12 +293,11 @@ pub(in crate::agentic::flow) fn split(
         state,
         model,
         questions,
+        assets,
     } = request;
-    let mut empty = EvaluationRequest {
-        state,
-        model,
-        questions: BTreeMap::new(),
-    };
+    // Every part keeps the images, since the state that names them does.
+    let mut empty = EvaluationRequest::new(model, state, BTreeMap::new());
+    empty.assets = assets;
     // A screen that fills most of a part by itself would leave room for one
     // question each, and every question would cost its own call: the
     // screen's longest lists are cut to half the limit first.
@@ -330,11 +329,10 @@ pub(in crate::agentic::flow) fn split(
 /// The request `parts` were cut from: the first part's state with every
 /// part's questions, as the journal and the trace record a decision.
 pub(in crate::agentic::flow) fn whole(parts: &[EvaluationRequest]) -> EvaluationRequest {
-    let mut whole = parts.first().cloned().unwrap_or_else(|| EvaluationRequest {
-        state: Value::Null,
-        model: String::new(),
-        questions: BTreeMap::new(),
-    });
+    let mut whole = parts
+        .first()
+        .cloned()
+        .unwrap_or_else(|| EvaluationRequest::new(String::new(), Value::Null, BTreeMap::new()));
     for part in parts.iter().skip(1) {
         whole.questions.extend(part.questions.clone());
     }
@@ -367,6 +365,7 @@ pub(in crate::agentic::flow) fn fit(request: &mut EvaluationRequest, limit: usiz
             Question::Choice(choice) => &mut choice.instructions,
             Question::Noul(noul) => &mut noul.instructions,
             Question::Score(score) => &mut score.instructions,
+            Question::Box(found) => &mut found.instructions,
         };
         if let Value::Object(fields) = instructions
             && fields.contains_key("brief")

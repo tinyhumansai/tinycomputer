@@ -16,6 +16,7 @@
 
 #[cfg(feature = "desktop")]
 mod backend;
+mod captcha;
 #[cfg(feature = "desktop")]
 mod continuation;
 mod flow;
@@ -41,6 +42,11 @@ mod verify;
 #[cfg(all(test, feature = "desktop"))]
 mod agentic_tests;
 
+pub use captcha::{
+    BrowserCaptchaPage, CaptchaOutcome, CaptchaPage, CaptchaPageFuture, CaptchaRole, CaptchaScan,
+    CaptchaSettings, CaptchaVendor, CaptchaWidget, DEFAULT_CAPTCHA_ATTEMPTS, MAX_CAPTCHA_ATTEMPTS,
+    Rect, Viewport, solve_captcha,
+};
 pub(crate) use flow::run_flow_with_host;
 pub(crate) use flow::{check_flow, missing_inputs};
 pub use flow::{flow_guide, run_flow, validate_flow};

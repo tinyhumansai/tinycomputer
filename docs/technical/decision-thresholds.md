@@ -107,3 +107,17 @@ replace the single-number bars above at every site they apply to unless
 | `MAX_RECENT` | 24 | `ledger.rs` | history lines shown as `recent_actions` |
 | `MAX_TRIED` | 12 | `ledger.rs` | `tried_and_failed` notes kept before the oldest is dropped |
 | `MAX_LINE` | 240 | `ledger.rs` | longest a ledger line is let to run |
+
+## Captcha solver
+
+[`specs/captcha-solver.md`](specs/captcha-solver.md) describes the loop.
+
+| Constant | Value | Where | Meaning |
+|---|---|---|---|
+| `TILE_THRESHOLD` | 0.50 | `agentic/captcha/solve.rs` | a tile's Noul at which it is pressed |
+| `BOX_CONFIDENCE` | 0.30 | `agentic/captcha/solve.rs` | least Box confidence used; under it, the widget's usual layout stands in (or the round fails, for the grid) |
+| `CHECKBOX_PRESSES` | 2 | `agentic/captcha/solve.rs` | presses of a checkbox that will not pass before the solver stops |
+| `SETTLE_MS` | 2,500 | `agentic/captcha/solve.rs` | wait after pressing a checkbox or verify |
+| `TILE_GAP_MS` | 300 | `agentic/captcha/solve.rs` | wait between tile presses |
+| `DEFAULT_CAPTCHA_ATTEMPTS` | 3 | `agentic/captcha/mod.rs` | image challenges submitted per try when the configuration names none (at most `MAX_CAPTCHA_ATTEMPTS`, 10) |
+| `MAX_SOLVED_WALLS` | 3 | `task/drive/run.rs` | walls one drive gets past on its own before the next goes to a person |

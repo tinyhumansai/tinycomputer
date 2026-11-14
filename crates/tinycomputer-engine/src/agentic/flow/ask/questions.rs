@@ -359,6 +359,7 @@ pub(in crate::agentic::flow) fn viewed(mut question: Question, view: &str) -> Qu
         Question::Choice(choice) => &mut choice.instructions,
         Question::Noul(noul) => &mut noul.instructions,
         Question::Score(score) => &mut score.instructions,
+        Question::Box(found) => &mut found.instructions,
     };
     if let Value::Object(fields) = instructions {
         fields.insert("view".to_owned(), Value::from(view));

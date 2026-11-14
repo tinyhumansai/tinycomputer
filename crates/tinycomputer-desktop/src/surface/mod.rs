@@ -6,10 +6,10 @@
 //! application with several windows to its front one. Paste goes through the
 //! clipboard and puts back what it held.
 
-use serde_json::{Value, json};
+use serde_json::Value;
 use tinycomputer_bus::{
-    ClipboardFormat, ClipboardGetRequest, ClipboardSetRequest, DesktopResponse, ElementProperty,
-    GetRequest, JevOperation, LaunchRequest, RefRequest, WaitRequest,
+    ClipboardGetRequest, ClipboardSetRequest, DesktopResponse, ElementProperty, GetRequest,
+    JevOperation, LaunchRequest, PressRequest, RefRequest, WaitRequest,
 };
 use tinycomputer_core::surface::{Candidate, Depth, Screen, Surface};
 
@@ -17,9 +17,9 @@ mod act;
 mod observation;
 mod paste;
 
-use act::{execute_desktop, press_at, running_is_launched};
+use act::{execute_desktop, running_is_launched};
 use observation::observe;
-use paste::{Restore, restore_plan, with_restoration};
+use paste::{PasteSteps, paste_through};
 
 use crate::Desktop;
 
@@ -63,44 +63,11 @@ impl Surface for Desktop {
     }
 
     fn paste(&self, app: &str, target: &Candidate, text: &str) -> DesktopResponse {
-        let previous = self.clipboard_get(ClipboardGetRequest {
-            format: Some(ClipboardFormat::Auto),
-            out: None,
-        });
-        let focused = self.focus(RefRequest::new(target.ref_id.clone()));
-        if !focused.ok {
-            let clicked = self.click(RefRequest::new(target.ref_id.clone()));
-            if !clicked.ok {
-                return clicked;
-            }
-        }
-        let staged = self.clipboard_set(ClipboardSetRequest::text(text));
-        if !staged.ok {
-            return staged;
-        }
-        let replaces = target
-            .available_actions
-            .iter()
-            .any(|action| action == "SetValue");
-        let selected = if replaces {
-            self.press(press_at(app, "cmd+a"))
-        } else {
-            DesktopResponse::ok("press", json!({}))
-        };
-        let pasted = self.press(press_at(app, "cmd+v"));
-        let _settled = self.wait(WaitRequest::sleep(150));
-        let restored = restore_plan(&previous).is_none_or(|restore| {
-            match restore {
-                Restore::Set(request) => self.clipboard_set(request),
-                Restore::Clear => self.clipboard_clear(),
-            }
-            .ok
-        });
-        with_restoration(if selected.ok { pasted } else { selected }, restored)
+        paste_through(self, app, target, text)
     }
 
     fn press(&self, app: &str, combo: &str) -> DesktopResponse {
-        Desktop::press(self, press_at(app, combo))
+        Desktop::press(self, act::press_at(app, combo))
     }
 
     fn launch(&self, app: &str) -> DesktopResponse {
@@ -111,6 +78,31 @@ impl Surface for Desktop {
 
     fn settle(&self) {
         let _settled = self.wait(WaitRequest::sleep(SETTLE_MS));
+    }
+}
+
+/// The paste's steps, each answered by the engine.
+impl PasteSteps for Desktop {
+    fn clipboard_get(&self, request: ClipboardGetRequest) -> DesktopResponse {
+        Desktop::clipboard_get(self, request)
+    }
+    fn clipboard_set(&self, request: ClipboardSetRequest) -> DesktopResponse {
+        Desktop::clipboard_set(self, request)
+    }
+    fn clipboard_clear(&self) -> DesktopResponse {
+        Desktop::clipboard_clear(self)
+    }
+    fn focus(&self, request: RefRequest) -> DesktopResponse {
+        Desktop::focus(self, request)
+    }
+    fn click(&self, request: RefRequest) -> DesktopResponse {
+        Desktop::click(self, request)
+    }
+    fn press(&self, request: PressRequest) -> DesktopResponse {
+        Desktop::press(self, request)
+    }
+    fn wait(&self, request: WaitRequest) -> DesktopResponse {
+        Desktop::wait(self, request)
     }
 }
 

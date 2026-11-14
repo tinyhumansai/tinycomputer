@@ -94,6 +94,15 @@ struct Script {
     hang_recovery: Mutex<bool>,
     /// Planless recovery requests, including named-only facts.
     plan_requests: Mutex<Vec<PlanRecoveryRequest>>,
+    /// What each call of `solve_captcha` reports, in order; `Unavailable`
+    /// once they run out.
+    captcha: Mutex<VecDeque<crate::CaptchaOutcome>>,
+    /// How many times `solve_captcha` was called.
+    captcha_calls: std::sync::atomic::AtomicU32,
+    /// Whether the solver's budget scope let each call reserve a model call.
+    captcha_reserved: Mutex<Vec<bool>>,
+    /// Whether `solve_captcha` never answers, like a slow solver.
+    captcha_hangs: std::sync::atomic::AtomicBool,
 }
 
 impl FlowRunner for Script {
@@ -188,6 +197,31 @@ impl FlowRunner for Script {
             return Box::pin(std::future::pending());
         }
         Box::pin(async move { shot })
+    }
+
+    fn solve_captcha(
+        &self,
+        _task: &TaskId,
+        _usage: std::sync::Arc<crate::UsageRecorder>,
+        reserve: super::CaptchaReserve,
+    ) -> super::CaptchaFuture {
+        // The task's model-call budget is reachable from the solver's scope.
+        self.captcha_reserved.lock().unwrap().push(reserve());
+        self.captcha_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let outcome = self
+            .captcha
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or(crate::CaptchaOutcome::Unavailable);
+        let hangs = self.captcha_hangs.load(std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async move {
+            if hangs {
+                std::future::pending::<()>().await;
+            }
+            outcome
+        })
     }
 
     fn release(&self, task: &TaskId) {

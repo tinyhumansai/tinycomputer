@@ -74,6 +74,14 @@ is optional:
   optional `sdk_name`); `endpoint_url` may only repeat that route's approved
   base URL; and `rescue_route` (`api_key`, `provider`, `endpoint_url`,
   `sdk_name`) gives the rescuer a route and key of its own;
+- `captcha`: the captcha solver a task tries before it pauses for a person
+  at a captcha or "verify you are human" check — `jev` (a Jev route of its
+  own, a `jev` object whose provider is not `sage`, which cannot locate
+  things in an image, so its image challenges would all fail while checkbox
+  handling still works; `model` defaults to `jev-preview`, which reads
+  images) and `max_attempts` (image challenges per try, default 3, at most
+  10). Without it such a check pauses the task as before
+  (`docs/technical/specs/captcha-solver.md`);
 - `browser`: how every browser launches — `executable` (the Chrome or
   Chromium binary), `user_agent`, `args` (an array of launch arguments),
   `perception` (`sight`, the default, or `tree`: how a task reads a page),

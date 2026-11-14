@@ -188,7 +188,7 @@ fn same_top(ballot: &[Answer], floor: f64) -> bool {
         let probabilities = match answer {
             Answer::Choice(choice) => &choice.probabilities,
             Answer::Score(score) => &score.probabilities,
-            Answer::Noul(_) => return None,
+            Answer::Noul(_) | Answer::Box(_) => return None,
         };
         probabilities
             .iter()

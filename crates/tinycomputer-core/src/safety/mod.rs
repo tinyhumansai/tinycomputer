@@ -21,7 +21,7 @@ mod gates;
 mod payment;
 
 pub use consequence::{Consequence, adjusts_a_count, consequence};
-pub use gates::human_needed;
+pub use gates::{PROVE_YOU_ARE_HUMAN, SOLVE_THE_CAPTCHA, human_needed, is_bot_check};
 pub use payment::{FieldHint, PaymentEvidence, payment_evidence, screen_payment_evidence};
 
 /// Lower-case words separated by single spaces, padded so whole-word phrases

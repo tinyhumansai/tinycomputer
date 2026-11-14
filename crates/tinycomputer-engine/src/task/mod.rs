@@ -141,6 +141,13 @@ pub type PageOriginFuture = Pin<Box<dyn Future<Output = Option<String>> + Send>>
 /// task's surface could take one.
 pub type CaptureFuture = Pin<Box<dyn Future<Output = Option<OutputRef>> + Send>>;
 
+/// Reserves one of the task's model calls before the captcha solver asks Jev
+/// a question; `false` when the task has none left.
+pub type CaptchaReserve = std::sync::Arc<dyn Fn() -> bool + Send + Sync>;
+
+/// The future [`FlowRunner::solve_captcha`] returns.
+pub type CaptchaFuture = Pin<Box<dyn Future<Output = crate::CaptchaOutcome> + Send>>;
+
 /// The future [`FlowRunner::prepare`] returns, once the surfaces are ready
 /// or could not be made so; a task goes on either way.
 pub type PrepareFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
@@ -302,6 +309,27 @@ pub trait FlowRunner: Send + Sync + 'static {
     /// default, and whenever the surface cannot take one.
     fn capture(&self, _task: &TaskId) -> CaptureFuture {
         Box::pin(async { None })
+    }
+
+    /// Tries to get the task's page past the captcha or "prove you are
+    /// human" check its text shows, before a person is asked to
+    /// ([`crate::solve_captcha`] does the work for a browser). Called only
+    /// when a failed step stopped on such a check; on
+    /// [`CaptchaOutcome::Solved`](crate::CaptchaOutcome::Solved) the failed
+    /// step runs again. [`CaptchaOutcome::Unavailable`](crate::CaptchaOutcome::Unavailable)
+    /// by default.
+    ///
+    /// The solver's Jev calls belong to the task: record them on `usage`,
+    /// and reserve each against the task's budget before asking
+    /// (`reserve`, which is [`TaskBudgetScope::try_reserve_model_call`]). The
+    /// caller also stops the call when the task's time runs out.
+    fn solve_captcha(
+        &self,
+        _task: &TaskId,
+        _usage: std::sync::Arc<crate::UsageRecorder>,
+        _reserve: CaptchaReserve,
+    ) -> CaptchaFuture {
+        Box::pin(async { crate::CaptchaOutcome::Unavailable })
     }
 
     /// Lets go of whatever the task held, once it has ended.

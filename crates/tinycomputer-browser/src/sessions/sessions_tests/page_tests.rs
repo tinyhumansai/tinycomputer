@@ -908,3 +908,28 @@ async fn a_raw_command_needs_an_action_and_returns_its_data() {
         Err(Error::InvalidInput { .. })
     ));
 }
+
+#[tokio::test]
+async fn pressing_a_point_moves_presses_and_releases_there() {
+    let fake = Fake::new();
+    let (browser, id) = open(&fake, "press-point").await;
+    browser.press_point(&id, 120.5, 64.0).await.unwrap();
+    let mice: Vec<Value> = fake
+        .sent()
+        .into_iter()
+        .filter(|command| command["action"] == "mouse")
+        .collect();
+    let events: Vec<&str> = mice
+        .iter()
+        .map(|command| command["eventType"].as_str().unwrap())
+        .collect();
+    assert_eq!(events, ["mouseMoved", "mousePressed", "mouseReleased"]);
+    assert!(
+        mice.iter()
+            .all(|command| command["x"] == 120.5 && command["y"] == 64.0)
+    );
+    assert!(matches!(
+        browser.press_point(&id, f64::NAN, 1.0).await,
+        Err(Error::InvalidInput { .. })
+    ));
+}

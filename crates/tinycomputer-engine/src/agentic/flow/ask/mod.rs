@@ -40,6 +40,7 @@ pub(super) fn request(model: &str, state: Value, questions: Questions) -> Evalua
         state,
         model: model.to_owned(),
         questions: questions.0,
+        assets: BTreeMap::new(),
     }
 }
 

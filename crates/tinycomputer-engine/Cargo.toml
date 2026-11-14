@@ -31,6 +31,8 @@ getrandom = { workspace = true }
 # Blocking engine calls run on `spawn_blocking`; loops sleep between looks.
 tokio = { workspace = true }
 url = { workspace = true }
+# The captcha solver crops and scales page screenshots for Jev to read.
+image = { workspace = true }
 
 # The planner's OpenRouter model, only with the `planner` feature. The shipped
 # module links it, but it stays inert until private configuration supplies a

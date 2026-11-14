@@ -71,3 +71,14 @@ async fn downloads_are_recorded_as_they_finish() {
     assert_eq!(browser.list_downloads(&id).await.unwrap(), [finished]);
     browser.close_session(&id).await.unwrap();
 }
+
+#[tokio::test]
+async fn screenshot_bytes_hands_the_image_back() {
+    let fake = Fake::new();
+    let (browser, id) = open(&fake, "screenshot-bytes").await;
+    let bytes = browser
+        .screenshot_bytes(&id, ScreenshotRequest::default())
+        .await
+        .unwrap();
+    assert_eq!(bytes, crate::fake::png(1280, 800));
+}

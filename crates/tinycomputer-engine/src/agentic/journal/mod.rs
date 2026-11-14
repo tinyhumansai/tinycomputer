@@ -195,7 +195,7 @@ impl Journal {
                 "step": step,
                 "questions": request.questions.keys().collect::<Vec<_>>(),
                 "request_bytes": request_bytes,
-                "request": request,
+                "request": without_image_data(request),
             });
             let outcome = match outcome {
                 Ok(result) => json!({
@@ -221,6 +221,22 @@ impl Journal {
             fields
         });
     }
+}
+
+/// `request` as the journal records it: every attached image's base64 is
+/// replaced by its length, so a captcha run's journal stays readable and
+/// small. The exchange still records the request's full size.
+fn without_image_data(request: &EvaluationRequest) -> Value {
+    let mut logged = serde_json::to_value(request).unwrap_or(Value::Null);
+    if let Some(assets) = logged.get_mut("assets").and_then(Value::as_object_mut) {
+        for asset in assets.values_mut() {
+            if let Some(data) = asset.get_mut("data_base64") {
+                let chars = data.as_str().map_or(0, str::len);
+                *data = Value::from(format!("[{chars} base64 characters]"));
+            }
+        }
+    }
+    logged
 }
 
 impl RunJournal {

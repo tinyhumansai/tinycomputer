@@ -360,3 +360,16 @@ endpoints directly.
   runs with `--disable-extensions`, because Chrome ranks an extension's proxy
   above the command-line proxy. `storageState`, `restore`, and CDP attach
   stay refused.
+
+## Captcha solver configuration (3.2)
+
+- `ComputerConfig.captcha` (`tinycomputer_bus::config::CaptchaConfig`) is an
+  optional section: `jev` (a `JevConfig` route of its own; `model` defaults to
+  `DEFAULT_CAPTCHA_MODEL`, `jev-preview`) and `max_attempts`. Unknown fields
+  and an explicit `null` are refused, like the other sections. Its key is
+  delivered through confidential module configuration.
+- It adds no member and changes no wire form, so it is a minor bump: a 3.0 or
+  3.1 module rejects the section as an unknown field, so a 3.2 host binds only
+  to a 3.2 or newer module.
+- Behaviour: [`captcha-solver.md`](captcha-solver.md).
+

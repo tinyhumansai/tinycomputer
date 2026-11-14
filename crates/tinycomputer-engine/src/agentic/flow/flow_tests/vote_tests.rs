@@ -299,3 +299,42 @@ fn every_part_of_a_split_request_gets_a_ballot() {
     assert_eq!(ballots.keys().collect::<Vec<_>>(), ["done", "holds"]);
     assert_eq!(ballots["holds"].len(), 2);
 }
+
+#[test]
+fn box_questions_take_a_perspective_and_merge_to_the_surest_box() {
+    let request = ask::request(
+        "jev-preview",
+        json!({"page": "shot"}),
+        ask::Questions::default().with(
+            "button",
+            Question::Box(tinyinference_decisions::BoxQuestion {
+                instructions: json!({"task": "the Verify button in `page`"}),
+            }),
+        ),
+    );
+    let framings = vote::framings(&request, 2);
+    let Question::Box(framed) = &framings[1].request.questions["button"] else {
+        panic!()
+    };
+    assert!(framed.instructions.get("perspective").is_some());
+    let boxed = |left: f64, confidence: f64| {
+        Answer::Box(tinyinference_decisions::BoxAnswer {
+            edges: tinyinference_decisions::BoxEdges {
+                top: 0.1,
+                bottom: 0.2,
+                left,
+                right: left + 0.1,
+            },
+            confidence,
+        })
+    };
+    let merged = vote::tally(&BTreeMap::from([(
+        "button".to_owned(),
+        vec![boxed(0.1, 0.4), boxed(0.5, 0.9), boxed(0.3, 0.6)],
+    )]));
+    let Answer::Box(surest) = &merged["button"] else {
+        panic!()
+    };
+    assert!((surest.edges.left - 0.5).abs() < 1e-9);
+    assert!((surest.confidence - 0.9).abs() < 1e-9);
+}

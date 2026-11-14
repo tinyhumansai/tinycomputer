@@ -23,7 +23,7 @@ fn judgements_are_briefed(request: &EvaluationRequest) -> bool {
         .any(|(id, question)| match question {
             Question::Noul(noul) => id != "confirm" && noul.instructions.get("brief").is_some(),
             Question::Score(score) => score.instructions.get("brief").is_some(),
-            Question::Choice(_) => false,
+            Question::Choice(_) | Question::Box(_) => false,
         })
 }
 

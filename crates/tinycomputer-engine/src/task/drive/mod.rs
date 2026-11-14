@@ -10,5 +10,8 @@ mod handoff;
 mod plan;
 mod run;
 
+pub(super) use finish::task_usage;
 pub(super) use plan::{plan_payment_then_drive, plan_then_drive};
+#[cfg(test)]
+pub(super) use run::MAX_SOLVED_WALLS;
 pub(super) use run::drive;

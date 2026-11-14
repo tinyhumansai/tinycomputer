@@ -33,4 +33,6 @@ example, [`jev-intent-flows.md`](jev-intent-flows.md) for the flow runtime, and
 undoing mistakes, [`task-rescue.md`](task-rescue.md) for rescuing a failed
 step with a reasoning model, [`task-output.md`](task-output.md) for
 remembering saved values and shaping a task's answer, and
-[`virtual-cursor.md`](virtual-cursor.md) for the agent's drawn cursor.
+[`virtual-cursor.md`](virtual-cursor.md) for the agent's drawn cursor, and
+[`captcha-solver.md`](captcha-solver.md) for trying a captcha before asking a
+person.
