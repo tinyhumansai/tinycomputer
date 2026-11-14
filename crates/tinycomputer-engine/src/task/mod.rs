@@ -141,6 +141,9 @@ pub type PageOriginFuture = Pin<Box<dyn Future<Output = Option<String>> + Send>>
 /// task's surface could take one.
 pub type CaptureFuture = Pin<Box<dyn Future<Output = Option<OutputRef>> + Send>>;
 
+/// The future [`FlowRunner::solve_captcha`] returns.
+pub type CaptchaFuture = Pin<Box<dyn Future<Output = crate::CaptchaOutcome> + Send>>;
+
 /// The future [`FlowRunner::prepare`] returns, once the surfaces are ready
 /// or could not be made so; a task goes on either way.
 pub type PrepareFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
@@ -302,6 +305,17 @@ pub trait FlowRunner: Send + Sync + 'static {
     /// default, and whenever the surface cannot take one.
     fn capture(&self, _task: &TaskId) -> CaptureFuture {
         Box::pin(async { None })
+    }
+
+    /// Tries to get the task's page past the captcha or "prove you are
+    /// human" check its text shows, before a person is asked to
+    /// ([`crate::solve_captcha`] does the work for a browser). Called only
+    /// when a failed step stopped on such a check; on
+    /// [`CaptchaOutcome::Solved`](crate::CaptchaOutcome::Solved) the failed
+    /// step runs again. [`CaptchaOutcome::Unavailable`](crate::CaptchaOutcome::Unavailable)
+    /// by default.
+    fn solve_captcha(&self, _task: &TaskId) -> CaptchaFuture {
+        Box::pin(async { crate::CaptchaOutcome::Unavailable })
     }
 
     /// Lets go of whatever the task held, once it has ended.

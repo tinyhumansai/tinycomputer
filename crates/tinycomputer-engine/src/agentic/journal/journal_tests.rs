@@ -243,3 +243,27 @@ fn a_fresh_run_is_named_for_its_kind_and_opened_only_when_the_journal_is_on() {
     assert_eq!(events(&dir)[0]["wall_ms"], 12);
     assert!(!Journal::default().fresh("plan").is_open(), "off stays off");
 }
+
+#[test]
+fn an_image_is_journaled_by_its_size_not_its_bytes() {
+    let scratch = Scratch::new("image");
+    let journal = Journal::at(&scratch.0).begin("captcha", "captcha", "jev-preview");
+    let dir = journal.run_dir().unwrap();
+    let mut png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR".to_vec();
+    png.extend(400_u32.to_be_bytes());
+    png.extend(300_u32.to_be_bytes());
+    let mut request = request();
+    request.state = json!({"page": "shot-1"});
+    let request = request.with_image("shot-1", tinyinference_decisions::ImageAsset::png(&png));
+    let failed = EvaluationFailure {
+        error: Box::new(tinyinference_decisions::Error::Timeout),
+        attempts: 1,
+        latency: Duration::from_millis(5),
+    };
+    journal.exchange(Some("captcha"), &request, Err(&failed));
+    let events = events(&dir);
+    let logged = &events[1]["request"]["assets"]["shot-1"];
+    assert_eq!(logged["format"], "png");
+    assert_eq!(logged["data_base64"], "[32 base64 characters]");
+    assert!(events[1]["request_bytes"].as_u64().unwrap() > 32);
+}

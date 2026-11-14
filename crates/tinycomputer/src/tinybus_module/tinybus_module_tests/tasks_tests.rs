@@ -131,6 +131,35 @@ async fn the_runner_keeps_one_workspace_per_task_until_released() {
 }
 
 #[tokio::test]
+async fn the_runner_tries_a_captcha_only_with_a_solver_and_a_page() {
+    use tinycomputer_bus::agent::TaskId;
+    use tinycomputer_engine::{CaptchaOutcome, CaptchaSettings, FlowRunner};
+
+    let browser = std::sync::Arc::new(tinycomputer_browser::Browser::new(std::sync::Arc::new(
+        tinycomputer_browser::AgentBrowser,
+    )));
+    let mut runner =
+        crate::tinybus_module::runner::WorkspaceRunner::new(crate::Desktop::new(), None, browser);
+    let task = TaskId::new("t-1");
+    assert_eq!(
+        runner.solve_captcha(&task).await,
+        CaptchaOutcome::Unavailable,
+        "no captcha configuration"
+    );
+    let route = tinycomputer_bus::JevConfig::new("test-key");
+    runner.captcha = Some((
+        tinycomputer_engine::JevRuntime::configure(&route).unwrap(),
+        CaptchaSettings::default(),
+    ));
+    let _ = runner.visible_text(&task).await;
+    assert_eq!(
+        runner.solve_captcha(&task).await,
+        CaptchaOutcome::Unavailable,
+        "no browser session open"
+    );
+}
+
+#[tokio::test]
 async fn a_task_report_request_is_one_a_confidential_call_can_carry() -> tinybus::Result<()> {
     use tinycomputer_bus::agent::{TaskId, TaskRef, TaskReportRequest};
 

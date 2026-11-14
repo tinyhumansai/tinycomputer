@@ -348,3 +348,15 @@ endpoints directly.
   `BrowserReleaseOutput` stay ordinary: they never carry the bytes. A
   screenshot reply's `OutputRef` does expose the output's id, size, SHA-256
   digest, media type, and pixel dimensions in ordinary traffic.
+
+## Captcha solver configuration (3.1)
+
+- `ComputerConfig.captcha` (`tinycomputer_bus::config::CaptchaConfig`) is an
+  optional section: `jev` (a `JevConfig` route of its own; `model` defaults to
+  `DEFAULT_CAPTCHA_MODEL`, `jev-preview`) and `max_attempts`. Unknown fields
+  and an explicit `null` are refused, like the other sections. Its key is
+  delivered through confidential module configuration.
+- It adds no member and changes no wire form, so it is a minor bump: a 3.0
+  module ignores the section and pauses every captcha for a person.
+- Behaviour: [`captcha-solver.md`](captcha-solver.md).
+

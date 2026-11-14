@@ -9,7 +9,7 @@ code, so this page exists mostly to keep them apart.
 ## `CONTRACT_VERSION`: does this host understand this module
 
 ```rust,ignore
-pub const CONTRACT_VERSION: (u32, u32) = (3, 0);
+pub const CONTRACT_VERSION: (u32, u32) = (3, 1);
 ```
 
 This describes the *vocabulary*: the member set and the payload shapes,
@@ -56,14 +56,14 @@ Two conditions, both necessary:
    relies on changed shape or disappeared, so a mismatched major is refused
    outright, in either direction.
 2. **The module must be at least as new, minor-wise, as the host.** A host
-   built against `(3, 0)` expects at least the members and fields that
-   existed at `(3, 0)`. A newer module with the same major is accepted. On
+   built against `(3, 1)` expects at least the members and fields that
+   existed at `(3, 1)`. A newer module with the same major is accepted. On
    the 2.x line, for example, a 2.29 host rejected a `(2, 28)` module, which
    lacked the typed `ComputerConfig` and versioned response extraction.
 
 ```rust,ignore
-assert!(is_compatible(CONTRACT_VERSION));   // (3, 0), the exact version this crate ships
-assert!(is_compatible((3, 1)));             // a newer, still-compatible module
+assert!(is_compatible(CONTRACT_VERSION));   // (3, 1), the exact version this crate ships
+assert!(is_compatible((3, 2)));             // a newer, still-compatible module
 assert!(!is_compatible((2, 29)));           // a different major: plain BrowserReadOutput
 assert!(!is_compatible((1, 10)));           // a different major, all bets off
 ```

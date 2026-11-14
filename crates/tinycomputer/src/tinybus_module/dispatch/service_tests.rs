@@ -48,7 +48,7 @@ fn module_service_consumes_shared_config_and_preserves_its_extensions() {
 
 #[test]
 fn module_rejects_null_shared_sections_but_preserves_nullable_trace_path() {
-    for field in ["jev", "planner", "browser"] {
+    for field in ["jev", "planner", "browser", "captcha"] {
         assert!(
             DesktopService::from_config(&json!({field: null})).is_err(),
             "explicit null must not silently disable {field}"
@@ -80,4 +80,38 @@ async fn a_host_executable_beside_egress_loads_the_enforced_service() {
         Some("/opt/host/chrome")
     );
     assert!(service.browser_defaults.egress.is_some());
+}
+
+#[test]
+fn a_captcha_section_brings_a_solver_on_an_image_reading_model() {
+    DesktopService::from_config(&json!({
+        "captcha": {"jev": {"api_key": "k"}, "max_attempts": 5}
+    }))
+    .expect("a captcha route is accepted");
+
+    let config: tinycomputer_bus::config::CaptchaConfig =
+        serde_json::from_value(json!({"jev": {"api_key": "k"}, "max_attempts": 5}))
+            .expect("captcha config");
+    let (runtime, settings) = super::captcha_solver(&config).expect("a solver");
+    assert_eq!(runtime.configuration().model, "jev-preview");
+    assert_eq!(settings.max_attempts, 5);
+
+    let config: tinycomputer_bus::config::CaptchaConfig =
+        serde_json::from_value(json!({"jev": {"api_key": "k", "model": "jev-2"}}))
+            .expect("captcha config");
+    let (runtime, settings) = super::captcha_solver(&config).expect("a solver");
+    assert_eq!(runtime.configuration().model, "jev-2");
+    assert_eq!(settings.max_attempts, 3);
+}
+
+#[test]
+fn a_bad_captcha_section_is_refused() {
+    for config in [
+        json!({"captcha": {"max_attempts": 2}}),
+        json!({"captcha": {"jev": {"api_key": "k"}, "surprise": true}}),
+        json!({"captcha": {"jev": {"api_key": "k", "endpoint_url": "https://attacker.example"}}}),
+        json!({"captcha": "on"}),
+    ] {
+        assert!(DesktopService::from_config(&config).is_err(), "{config}");
+    }
 }

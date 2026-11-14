@@ -4,7 +4,7 @@ use super::{has_phrase, normalize};
 
 /// What only a person can get past, by the words a page shows for it.
 const HUMAN_GATES: &[(&str, &str)] = &[
-    ("captcha", "solve the captcha"),
+    ("captcha", SOLVE_THE_CAPTCHA),
     // reCAPTCHA by its challenge, never by its name alone: an invisible
     // reCAPTCHA puts a frame titled "reCAPTCHA" (and "protected by
     // reCAPTCHA") on every form it guards, asking nothing of anyone.
@@ -61,6 +61,28 @@ const HUMAN_GATES: &[(&str, &str)] = &[
     ("login required", "sign in"),
     ("sign in required", "sign in"),
 ];
+
+/// What [`human_needed`] asks for a captcha.
+pub const SOLVE_THE_CAPTCHA: &str = "solve the captcha";
+/// What [`human_needed`] asks for a "prove you are human" check.
+pub const PROVE_YOU_ARE_HUMAN: &str = "prove you are human";
+
+/// Whether `action`, as [`human_needed`] returned it, is a check against
+/// bots — a captcha, or "prove you are human" — rather than a code or a
+/// sign-in only the person themselves can give. Software may try a bot
+/// check before asking a person to.
+///
+/// ```
+/// use tinycomputer_core::{human_needed, is_bot_check};
+///
+/// let page = ["Verify you are human".to_owned()];
+/// assert!(is_bot_check(&human_needed(&page).unwrap()));
+/// assert!(!is_bot_check("enter the one-time password"));
+/// ```
+#[must_use]
+pub fn is_bot_check(action: &str) -> bool {
+    action == SOLVE_THE_CAPTCHA || action == PROVE_YOU_ARE_HUMAN
+}
 
 /// What a person must do before a task can go on, when the visible text
 /// shows a captcha, a one-time code, two-factor authentication, or a login

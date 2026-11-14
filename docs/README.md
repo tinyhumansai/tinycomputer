@@ -63,6 +63,7 @@ controller, the debug journal, specifications, implementation plans, decision
 records, and recorded evaluations. Read those when you're changing the code.
 
 [Globe lease replay and joined native shutdown](technical/specs/globe-replay.md) specifies the reliable macOS input composition contract.
+[Captcha solver](technical/specs/captcha-solver.md) specifies how a task tries a captcha with Jev's image questions before it asks a person.
 
 ## Conventions
 

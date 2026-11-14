@@ -351,6 +351,7 @@ fn warm_up(model: &str) -> EvaluationRequest {
             }),
         )]
         .into(),
+        assets: std::collections::BTreeMap::new(),
     }
 }
 

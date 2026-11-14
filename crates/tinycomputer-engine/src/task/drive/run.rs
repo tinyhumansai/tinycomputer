@@ -19,6 +19,10 @@ use crate::task::publish::stopped_summary;
 use crate::task::recovery::{rescue_outcome, rescued};
 use crate::task::store::{Cell, PaymentCheckpointState, Run};
 
+/// Captchas one drive of a task gets past on its own before it hands the
+/// next to a person, so a page that keeps asking cannot loop the task.
+pub(in crate::task) const MAX_SOLVED_WALLS: u32 = 3;
+
 /// Runs a task's flows in order until one stops it or all finish.
 ///
 /// A task's [`TaskBudget`] bounds the whole task, not one run of it: an
@@ -30,6 +34,7 @@ use crate::task::store::{Cell, PaymentCheckpointState, Run};
 /// otherwise run past what remains of it.
 pub(in crate::task) async fn drive(cell: Arc<Cell>, runner: Arc<dyn FlowRunner>, runs: Vec<Run>) {
     let mut runs = VecDeque::from(runs);
+    let mut solved_walls = 0_u32;
     while let Some(run) = runs.pop_front() {
         let Some((request, constraints, time_left)) = run_request(&cell, &run) else {
             return;
@@ -76,7 +81,21 @@ pub(in crate::task) async fn drive(cell: Arc<Cell>, runner: Arc<dyn FlowRunner>,
             continue;
         }
         if let Next::Stop { status, .. } = next {
-            let status = human_wall(&cell, runner.as_ref(), *status).await;
+            let status = match human_wall(
+                &cell,
+                runner.as_ref(),
+                *status,
+                solved_walls < MAX_SOLVED_WALLS,
+            )
+            .await
+            {
+                Ok(status) => status,
+                Err(retry) => {
+                    solved_walls += 1;
+                    runs.push_front(retry);
+                    continue;
+                }
+            };
             let status = match rescued(&cell, runner.as_ref(), &run, status, reached).await {
                 Ok(status) => status,
                 Err(rescued) => {

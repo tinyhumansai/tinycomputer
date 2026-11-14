@@ -137,6 +137,7 @@ pub(in crate::agentic) fn request(
         }),
         model: model.to_owned(),
         questions,
+        assets: BTreeMap::new(),
     }
 }
 
@@ -175,6 +176,7 @@ pub(in crate::agentic) fn rerank_request(
                 criteria,
             }),
         )]),
+        assets: BTreeMap::new(),
     }
 }
 
