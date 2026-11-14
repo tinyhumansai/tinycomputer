@@ -322,7 +322,7 @@ pub trait FlowRunner: Send + Sync + 'static {
     fn solve_captcha(
         &self,
         _task: &TaskId,
-        _usage: Arc<crate::UsageRecorder>,
+        _usage: std::sync::Arc<crate::UsageRecorder>,
         _budget: TaskBudgetScope,
     ) -> CaptchaFuture {
         Box::pin(async { crate::CaptchaOutcome::Unavailable })

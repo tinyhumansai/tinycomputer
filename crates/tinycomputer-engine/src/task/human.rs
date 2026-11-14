@@ -1,9 +1,14 @@
 //! Telling a wall only a person can pass from an ordinary failure, and
 //! trying a captcha before asking a person to.
 
+use std::sync::Arc;
+use std::time::Duration;
+
 use tinycomputer_bus::agent::{TaskId, TaskStatus};
 
 use super::FlowRunner;
+use super::budget::{TaskCallBudget, elapsed_budget_failed};
+use super::drive::task_usage;
 use super::interpret::Resume;
 use super::store::{Cell, Run};
 use crate::CaptchaOutcome;
@@ -17,7 +22,7 @@ use tinycomputer_bus::Flow;
 /// solver when `may_solve`; once it is solved, the failed step and the rest
 /// come back as the run to go on with (`Err`), and no person is asked.
 pub(super) async fn human_wall(
-    cell: &Cell,
+    cell: &Arc<Cell>,
     runner: &dyn FlowRunner,
     status: TaskStatus,
     may_solve: bool,
@@ -41,7 +46,10 @@ pub(super) async fn human_wall(
     if let Some(action) = wall {
         let mut tried = String::new();
         if may_solve && tinycomputer_core::is_bot_check(&action) {
-            match solve(runner, &id).await {
+            let Some(outcome) = solve(cell, runner, &id).await else {
+                return Ok(elapsed_budget_failed());
+            };
+            match outcome {
                 CaptchaOutcome::Solved { .. } => {
                     if let Some(run) = retry_run(cell) {
                         return Err(run);
@@ -71,8 +79,28 @@ pub(super) async fn human_wall(
 }
 
 /// The runner's solver on `task`'s page, journaled.
-async fn solve(runner: &dyn FlowRunner, task: &TaskId) -> CaptchaOutcome {
-    let outcome = runner.solve_captcha(task).await;
+///
+/// The solve is host work of the task: its Jev calls are recorded in the
+/// task's usage and reserved against its model-call budget, its time is
+/// charged to the task, and it is cut off when the task's remaining time
+/// runs out. `None` is that cut-off; with no budget left to begin with, the
+/// solver is reported [`CaptchaOutcome::Unsolved`] and a person is asked.
+async fn solve(cell: &Arc<Cell>, runner: &dyn FlowRunner, task: &TaskId) -> Option<CaptchaOutcome> {
+    let Some(work) = TaskCallBudget::for_cell(Arc::downgrade(cell)).begin_work() else {
+        return Some(CaptchaOutcome::Unsolved {
+            attempts: 0,
+            reason: "the task has no time left for the solver".to_owned(),
+        });
+    };
+    let scope = work.scope();
+    let solving = runner.solve_captcha(task, task_usage(cell), scope.clone());
+    let outcome = match scope.remaining_ms() {
+        Some(ms) => tokio::time::timeout(Duration::from_millis(ms), solving)
+            .await
+            .ok()?,
+        None => solving.await,
+    };
+    drop(work);
     runner.journal(Some(task), "captcha", &|| match &outcome {
         CaptchaOutcome::Unavailable => serde_json::json!({"outcome": "unavailable"}),
         CaptchaOutcome::Solved { attempts } => {
@@ -85,7 +113,7 @@ async fn solve(runner: &dyn FlowRunner, task: &TaskId) -> CaptchaOutcome {
             serde_json::json!({"outcome": "unsolved", "attempts": attempts, "reason": reason})
         }
     });
-    outcome
+    Some(outcome)
 }
 
 /// The run that tries the failed step again, as a person's "done" would.

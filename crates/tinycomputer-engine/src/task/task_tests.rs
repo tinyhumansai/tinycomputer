@@ -99,6 +99,8 @@ struct Script {
     captcha: Mutex<VecDeque<crate::CaptchaOutcome>>,
     /// How many times `solve_captcha` was called.
     captcha_calls: std::sync::atomic::AtomicU32,
+    /// Whether the solver's budget scope let each call reserve a model call.
+    captcha_reserved: Mutex<Vec<bool>>,
 }
 
 impl FlowRunner for Script {
@@ -198,7 +200,7 @@ impl FlowRunner for Script {
     fn solve_captcha(
         &self,
         _task: &TaskId,
-        _usage: Arc<crate::UsageRecorder>,
+        _usage: std::sync::Arc<crate::UsageRecorder>,
         budget: super::TaskBudgetScope,
     ) -> super::CaptchaFuture {
         // The task's model-call budget is reachable from the solver's scope.
