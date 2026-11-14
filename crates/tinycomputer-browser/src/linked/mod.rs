@@ -30,7 +30,25 @@ pub struct AgentBrowser;
 #[derive(Clone)]
 pub struct EnforcedAgentBrowser {
     authorizer: Arc<dyn EgressAuthorizer>,
-    executable: Option<String>,
+    host: HostBrowser,
+}
+
+/// What the host, never a browser call, chooses for an enforced launch: the
+/// Chrome binary and the profile folder kept between sessions.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct HostBrowser {
+    pub(crate) executable: Option<String>,
+    pub(crate) profile: Option<String>,
+}
+
+impl HostBrowser {
+    #[cfg(test)]
+    pub(crate) fn executable(executable: &str) -> Self {
+        Self {
+            executable: Some(executable.to_owned()),
+            profile: None,
+        }
+    }
 }
 
 impl std::fmt::Debug for EnforcedAgentBrowser {
@@ -45,7 +63,7 @@ impl EnforcedAgentBrowser {
     pub fn new(authorizer: Arc<dyn EgressAuthorizer>) -> Self {
         Self {
             authorizer,
-            executable: None,
+            host: HostBrowser::default(),
         }
     }
 
@@ -53,7 +71,18 @@ impl EnforcedAgentBrowser {
     /// control, like the proxy: a launch may repeat it but never name another.
     #[must_use]
     pub fn with_executable(mut self, executable: Option<String>) -> Self {
-        self.executable = executable;
+        self.host.executable = executable;
+        self
+    }
+
+    /// Let a launch use the host-configured profile folder, so cookies and
+    /// sign-ins survive between sessions. It is host control, like the
+    /// executable: a launch may name this folder but never another, and it
+    /// runs with extensions off, since an extension stored in the profile
+    /// could set a proxy that outranks the enforced one.
+    #[must_use]
+    pub fn with_profile(mut self, profile: Option<String>) -> Self {
+        self.host.profile = profile;
         self
     }
 }
@@ -66,7 +95,7 @@ impl Launcher for AgentBrowser {
             proxy: None,
             proxy_session_id: String::new(),
             proxy_password: String::new(),
-            host_executable: None,
+            host: HostBrowser::default(),
             enforced_launch: false,
         })
     }
@@ -75,7 +104,7 @@ impl Launcher for AgentBrowser {
 impl Launcher for EnforcedAgentBrowser {
     fn open(&self, session: &str) -> Box<dyn Engine> {
         let mut engine = enforced(self.authorizer.clone(), session);
-        engine.host_executable.clone_from(&self.executable);
+        engine.host.clone_from(&self.host);
         Box::new(engine)
     }
 }
@@ -90,7 +119,7 @@ fn enforced(authorizer: Arc<dyn EgressAuthorizer>, session: &str) -> Linked {
         proxy: None,
         proxy_session_id: private_session_id(),
         proxy_password: private_session_id(),
-        host_executable: None,
+        host: HostBrowser::default(),
         enforced_launch: false,
     }
 }
@@ -101,7 +130,7 @@ struct Linked {
     proxy: Option<EgressProxy>,
     proxy_session_id: String,
     proxy_password: String,
-    host_executable: Option<String>,
+    host: HostBrowser,
     enforced_launch: bool,
 }
 
@@ -144,7 +173,7 @@ impl Engine for Linked {
                     command.clone(),
                     &proxy.url(),
                     &self.proxy_password,
-                    self.host_executable.as_deref(),
+                    &self.host,
                 ) {
                     Ok(command) => command,
                     Err(reason) => return failure_reply(&command, reason),
@@ -232,7 +261,7 @@ fn enforce_launch(
     command: Value,
     proxy: &str,
     proxy_password: &str,
-    host_executable: Option<&str>,
+    host: &HostBrowser,
 ) -> Result<Value, &'static str> {
     let has_ambient_browser_config = command.get("action").and_then(Value::as_str)
         == Some("launch")
@@ -242,7 +271,7 @@ fn enforce_launch(
         proxy,
         proxy_password,
         has_ambient_browser_config,
-        host_executable,
+        host,
     )
 }
 
@@ -251,8 +280,9 @@ fn enforce_launch_with_config(
     proxy: &str,
     proxy_password: &str,
     has_ambient_browser_config: bool,
-    host_executable: Option<&str>,
+    host: &HostBrowser,
 ) -> Result<Value, &'static str> {
+    let host_executable = host.executable.as_deref();
     if command.get("action").and_then(Value::as_str) != Some("launch") {
         return Ok(command);
     }
@@ -261,7 +291,6 @@ fn enforce_launch_with_config(
         "cdpPort",
         "autoConnect",
         "provider",
-        "profile",
         "storageState",
         "restore",
     ]
@@ -269,6 +298,13 @@ fn enforce_launch_with_config(
     .any(|key| command.get(key).is_some())
     {
         return Err("network policy refuses attached or externally managed browsers");
+    }
+    // Only the host chooses the profile folder, as it does the binary: a
+    // launch may name the host's own folder, or none for a fresh profile.
+    if let Some(requested) = command.get("profile")
+        && (host.profile.is_none() || requested.as_str() != host.profile.as_deref())
+    {
+        return Err("network policy refuses a browser profile the host did not configure");
     }
     // Only the host chooses the binary. A launch may repeat the host's own
     // executable (hosts send it with each session) but not name another.
@@ -309,12 +345,18 @@ fn enforce_launch_with_config(
     if let Some(executable) = host_executable {
         command["executablePath"] = json!(executable);
     }
-    command["args"] = json!([
+    let mut args = vec![
         "--disable-quic",
         "--disable-http2",
         "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
-        "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"
-    ]);
+        "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+    ];
+    // Chrome ranks an extension's proxy above the command line's, and a kept
+    // profile can carry installed extensions.
+    if command.get("profile").is_some() {
+        args.push("--disable-extensions");
+    }
+    command["args"] = json!(args);
     Ok(command)
 }
 

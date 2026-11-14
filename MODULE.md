@@ -75,7 +75,8 @@ is optional:
   base URL; and `rescue_route` (`api_key`, `provider`, `endpoint_url`,
   `sdk_name`) gives the rescuer a route and key of its own;
 - `browser`: how every browser launches — `executable` (the Chrome or
-  Chromium binary), `user_agent`, `args` (an array of launch arguments),
+  Chromium binary), `profile` (the profile folder kept between sessions, the
+  only one a launch may name under egress), `user_agent`, `args` (an array of launch arguments),
   `perception` (`sight`, the default, or `tree`: how a task reads a page),
   `settle` (`prompt`, the default, or `steady`: how long a page is let
   settle after an action), and `prelaunch` (a boolean, `true` by default:

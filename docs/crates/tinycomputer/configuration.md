@@ -278,18 +278,23 @@ optional:
 | Key | What it does |
 |---|---|
 | `executable` | the Chrome or Chromium binary to launch, for when the platform's own discovery would not find one, for example a container with Chrome installed somewhere nonstandard |
+| `profile` | the Chrome profile folder (an absolute path) the host keeps between sessions, so cookies and sign-ins survive a restart. It is not applied by itself: a session or task names it as its profile (`user_data_dir`, `browser_profile`), and one that names none starts fresh. With `egress` set it is the only profile a launch may name |
 | `user_agent` | the `User-Agent` every launched browser sends; booking sites turn away a browser that announces itself as headless |
 | `args` | extra launch arguments, as an array of strings |
 | `perception` | how a task reads a page: `sight` (the default) reads the rendered page as a person sees it, `tree` the accessibility tree alone ([`browser-sight.md`](../../technical/specs/browser-sight.md)) |
 | `settle` | how a task lets a page settle after an action before reading it again: `prompt` (the default) counts the network's 500 ms of quiet from the start, counting only requests that can change the page and for at most 1 s, and then waits only while the page is still changing (at most 400 ms), so an idle page is read again after about 0.6 s; `steady` waits for the network to go idle, at least about 1.1 s, then 400 ms more |
 | `prelaunch` | `true` (the default) opens a browser-only task's browser while `StartTask` plans it (a `task` with no `flow`), so the first step does not wait for the launch, and loads in it the one web address the task's text names, if it names one, so a first step that browses there does not wait for the page either; `false` opens it at the first step |
-| `egress` | Host-private TinySecurity scope. When present, `policy_id` and `generation` are required; browser `args`, attached DevTools endpoints, caller-supplied launch flags, and any executable other than this section's `executable` are refused. The scope is never a browser or task argument. |
+| `egress` | Host-private TinySecurity scope. When present, `policy_id` and `generation` are required; browser `args`, attached DevTools endpoints, caller-supplied launch flags, and any executable or profile other than this section's `executable` and `profile` are refused. The scope is never a browser or task argument. |
 
 The launch and attach options above apply only when `egress` is absent, except
 `executable`. With `egress` set, TinyComputer owns the launch arguments and
 launches the host's `executable` (or the discovered Chrome) with its proxy and
 resolver flags. A task `browser_executable` or session `executable` may repeat
 the host's path; any other is refused, as are attached DevTools endpoints.
+Likewise a session's profile may only be this section's `profile` (or none,
+for a fresh one), and a launch that uses it runs with `--disable-extensions`:
+Chrome ranks an extension's proxy above the command line's, and a kept profile
+can carry installed extensions. `storageState` and `restore` stay refused.
 
 With `egress`, every launched browser session uses a private, authenticated
 loopback proxy. TinyComputer parses each HTTP request, asks the authenticated

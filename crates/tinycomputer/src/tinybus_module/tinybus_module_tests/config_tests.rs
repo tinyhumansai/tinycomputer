@@ -230,6 +230,26 @@ fn the_browser_configuration_is_read_or_refused() {
         }}))
         .is_ok()
     );
+    // So does the host's kept profile folder: the enforced launcher lets a
+    // session use that folder and no other.
+    let with_profile = json!({"browser": {
+        "executable": "/usr/bin/chromium",
+        "profile": "/srv/state/browser/profile",
+        "egress": {"policy_id": "host-policy", "generation": 7}
+    }});
+    assert!(
+        BrowserDefaults::egress_from_raw(&with_profile)
+            .unwrap()
+            .is_some()
+    );
+    let parsed = serde_json::from_value::<ComputerConfig>(json!({"browser": {
+        "profile": "/srv/state/browser/profile"
+    }}))
+    .unwrap();
+    assert_eq!(
+        parsed.browser.unwrap().profile.as_deref(),
+        Some("/srv/state/browser/profile")
+    );
     // Settling promptly and opening the browser early are on unless turned
     // off.
     let unset = BrowserDefaults::default();
