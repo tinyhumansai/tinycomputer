@@ -49,6 +49,11 @@ fn computer_config(config: &serde_json::Value) -> Result<ComputerConfig> {
             "browser",
             "an object with optional executable and browser defaults",
         )?,
+        captcha: config_field(
+            config,
+            "captcha",
+            "a captcha configuration with a Jev route and optional max_attempts",
+        )?,
         trace_path: config_field(config, "trace_path", "a string trace path")?,
     })
 }
