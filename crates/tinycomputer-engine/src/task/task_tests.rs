@@ -94,6 +94,11 @@ struct Script {
     hang_recovery: Mutex<bool>,
     /// Planless recovery requests, including named-only facts.
     plan_requests: Mutex<Vec<PlanRecoveryRequest>>,
+    /// What each call of `solve_captcha` reports, in order; `Unavailable`
+    /// once they run out.
+    captcha: Mutex<VecDeque<crate::CaptchaOutcome>>,
+    /// How many times `solve_captcha` was called.
+    captcha_calls: std::sync::atomic::AtomicU32,
 }
 
 impl FlowRunner for Script {
@@ -188,6 +193,18 @@ impl FlowRunner for Script {
             return Box::pin(std::future::pending());
         }
         Box::pin(async move { shot })
+    }
+
+    fn solve_captcha(&self, _task: &TaskId) -> super::CaptchaFuture {
+        self.captcha_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let outcome = self
+            .captcha
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or(crate::CaptchaOutcome::Unavailable);
+        Box::pin(async move { outcome })
     }
 
     fn release(&self, task: &TaskId) {
