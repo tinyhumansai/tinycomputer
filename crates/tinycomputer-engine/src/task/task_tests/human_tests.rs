@@ -265,7 +265,7 @@ async fn a_solver_that_outruns_the_task_time_budget_fails_the_task() {
     let reply = tasks.start(&StartTaskRequest {
         flow: Some(flow(json!({"app": "browser", "steps": ["a", "b", "c"]}))),
         budget: tinycomputer_bus::agent::TaskBudget {
-            max_elapsed_ms: Some(5_000),
+            max_elapsed_ms: Some(1_000),
             ..tinycomputer_bus::agent::TaskBudget::default()
         },
         ..StartTaskRequest::default()

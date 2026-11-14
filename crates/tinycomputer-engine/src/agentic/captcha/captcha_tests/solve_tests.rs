@@ -243,7 +243,12 @@ async fn a_jev_that_cannot_find_the_tiles_presses_nothing() {
 #[tokio::test]
 async fn a_checkbox_that_will_not_pass_is_pressed_twice_then_left() {
     let page = ScriptedPage::new(vec![Some(scan(vec![checkbox()], false))]);
-    let (jev, _) = jev(|_| None);
+    let (jev, _) = jev(|_| {
+        Some(BTreeMap::from([(
+            "checkbox".to_owned(),
+            found(0.05, 0.3, 0.15, 0.7, 0.8),
+        )]))
+    });
     let outcome = solve_captcha(&page, &jev, &CaptchaSettings::default(), &|| true).await;
     assert!(
         matches!(&outcome, CaptchaOutcome::Unsolved { attempts: 0, reason } if reason.contains("checkbox")),
@@ -256,7 +261,12 @@ async fn a_checkbox_that_will_not_pass_is_pressed_twice_then_left() {
 async fn a_refused_press_ends_the_try() {
     let mut page = ScriptedPage::new(vec![Some(scan(vec![checkbox()], false))]);
     page.presses_work = false;
-    let (jev, _) = jev(|_| None);
+    let (jev, _) = jev(|_| {
+        Some(BTreeMap::from([(
+            "checkbox".to_owned(),
+            found(0.05, 0.3, 0.15, 0.7, 0.8),
+        )]))
+    });
     let outcome = solve_captcha(&page, &jev, &CaptchaSettings::default(), &|| true).await;
     assert!(
         matches!(&outcome, CaptchaOutcome::Unsolved { reason, .. } if reason.contains("could not be pressed")),
