@@ -57,7 +57,7 @@ The host-visible loader fields are decoded as
 `browser`, and `trace_path`. The planner's route types are the same public
 types used by the engine. The module adapter converts `trace_path` into
 `Desktop` settings and applies the typed browser defaults: `browser` sets how
-every browser launches — `executable`, `user_agent`, `args`, a task's page
+every browser launches — `executable`, the kept `profile`, `user_agent`, `args`, a task's page
 `perception`, how a page `settle`s after an action, and whether to `prelaunch`
 a planned browser task's browser.
 
