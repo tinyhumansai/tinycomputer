@@ -68,11 +68,12 @@ pub use planner::{
 pub use rescue::{Briefing, Guidance, MAX_RESCUE_STEPS, MAX_RESCUES, Rescuer, SCREEN_CHARS};
 pub use shape::{Harvest, RECORDS_CHARS, Shaper};
 pub use task::{
-    BrowserRunner, CaptchaFuture, CaptureFuture, ContinuePaidAtShopRequest, ContinuePaymentRequest,
-    FailedStepRecovery, FailedStepRecoveryFuture, FailedStepRecoveryResult, FlowFuture, FlowRunner,
-    HostWorkGuard, MAX_AWAIT_MS, MAX_TASKS, PageOriginFuture, PausedTaskError, PlanRecoveryFuture,
-    PlanRecoveryRequest, PlanRecoveryResult, PrepareFuture, SecretHost, SecretTypeRequest,
-    TaskBudgetScope, TaskCallBudget, Tasks, TextFuture, capabilities,
+    BrowserRunner, CaptchaFuture, CaptchaReserve, CaptureFuture, ContinuePaidAtShopRequest,
+    ContinuePaymentRequest, FailedStepRecovery, FailedStepRecoveryFuture, FailedStepRecoveryResult,
+    FlowFuture, FlowRunner, HostWorkGuard, MAX_AWAIT_MS, MAX_TASKS, PageOriginFuture,
+    PausedTaskError, PlanRecoveryFuture, PlanRecoveryRequest, PlanRecoveryResult, PrepareFuture,
+    SecretHost, SecretTypeRequest, TaskBudgetScope, TaskCallBudget, Tasks, TextFuture,
+    capabilities,
 };
 pub use tinycomputer_bus::DesktopResponse;
 #[cfg(feature = "desktop")]
