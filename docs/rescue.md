@@ -28,7 +28,9 @@ force.
    Sign up using OTP"), the task pauses as `needs_human`. A rescue can't
    solve those. When the module has a captcha solver, a captcha or "verify
    you are human" check gets a few tries from it first, and the task only
-   pauses if they fail. A header's bare "Log in" or "Sign up" link is no wall.
+   pauses if they fail. A drive that has already solved three walls skips the
+   solver for the next bot check and sends it straight to a person. The
+   solver's Jev calls and time count against the task's budget. A header's bare "Log in" or "Sign up" link is no wall.
 2. **Ask the rescuer.** Otherwise, and if rescues are configured, the task
    briefs the rescuer and asks for guidance. While it waits, the summary reads
    "Step 13 failed; asking for guidance (rescue 1 of 5)."

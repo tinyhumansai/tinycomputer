@@ -37,7 +37,9 @@ vocabularies and two loops, and stitch them together itself.
   checkpoint or an approval ([`jev-briefing.md`](jev-briefing.md)).
 - Bypassing logins or two-factor prompts. They become `needs_human`. A
   captcha gets one bounded try by the opt-in solver first
-  ([`captcha-solver.md`](captcha-solver.md)), then becomes `needs_human`.
+  ([`captcha-solver.md`](captcha-solver.md)); when it solves it the failed
+  step is retried without asking a person, and only when it cannot does the
+  captcha become `needs_human`.
 - Vision models in the shipped module, beyond the captcha solver's image
   questions.
 
