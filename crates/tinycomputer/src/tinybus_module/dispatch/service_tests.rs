@@ -13,6 +13,7 @@ fn module_service_consumes_shared_config_and_preserves_its_extensions() {
     let shared = ComputerConfig {
         browser: Some(BrowserConfig {
             executable: Some("/opt/chromium".into()),
+            profile: None,
             user_agent: None,
             args: vec!["--disable-gpu".into()],
             perception: BrowserPerception::Tree,

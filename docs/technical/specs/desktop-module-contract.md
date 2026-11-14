@@ -348,3 +348,15 @@ endpoints directly.
   `BrowserReleaseOutput` stay ordinary: they never carry the bytes. A
   screenshot reply's `OutputRef` does expose the output's id, size, SHA-256
   digest, media type, and pixel dimensions in ordinary traffic.
+
+## Host browser profile (3.1)
+
+- `browser.profile` is a new optional field of the module's `browser`
+  configuration: the profile folder the host keeps between sessions. A 3.0
+  module rejects it as an unknown field, so this is a minor bump and a 3.1
+  host binds only to a 3.1 or newer module.
+- The enforced launcher lets a session name that folder through
+  `user_data_dir`, or none, and refuses any other folder. A profiled launch
+  runs with `--disable-extensions`, because Chrome ranks an extension's proxy
+  above the command-line proxy. `storageState`, `restore`, and CDP attach
+  stay refused.

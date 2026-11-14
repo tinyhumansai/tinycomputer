@@ -80,7 +80,10 @@ is optional:
   `settle` (`prompt`, the default, or `steady`: how long a page is let
   settle after an action), and `prelaunch` (a boolean, `true` by default:
   open a browser-only task's browser while it is planned, at the one web
-  address the task's text names, if it names one).
+  address the task's text names, if it names one). Its `profile` (the folder
+  kept between sessions, the only one a launch may name under egress) applies
+  only when a session or task names it as its profile (`user_data_dir` or
+  `browser_profile`); one that names none starts fresh.
 
 Configuration is delivered as sensitive host-control traffic and is never
 shown to monitors.

@@ -8,7 +8,7 @@
 //! release workflow bumps, which tracks the shipped artifact.
 
 /// The wire contract version this crate defines.
-pub const CONTRACT_VERSION: (u32, u32) = (3, 0);
+pub const CONTRACT_VERSION: (u32, u32) = (3, 1);
 
 /// Returns whether a host holding [`CONTRACT_VERSION`] can bind to a module
 /// reporting `module`.
@@ -22,7 +22,8 @@ pub const CONTRACT_VERSION: (u32, u32) = (3, 0);
 /// ```
 /// # use tinycomputer_bus::{is_compatible, CONTRACT_VERSION};
 /// assert!(is_compatible(CONTRACT_VERSION));
-/// assert!(is_compatible((3, 0)));
+/// assert!(is_compatible((3, 1)));
+/// assert!(!is_compatible((3, 0)));
 /// assert!(!is_compatible((2, 29)));
 /// assert!(!is_compatible((1, 8)));
 /// ```
