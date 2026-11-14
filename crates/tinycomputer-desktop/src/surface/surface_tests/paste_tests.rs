@@ -98,11 +98,8 @@ fn a_failed_clipboard_restoration_is_folded_into_the_response_instead_of_ignored
 /// A scripted pasteboard and keyboard that records what a paste did.
 struct Steps {
     held: DesktopResponse,
-    focus_ok: bool,
-    click_ok: bool,
-    stage_ok: bool,
-    select_ok: bool,
-    restore_ok: bool,
+    /// The steps that fail: `focus`, `click`, `stage`, `select`, `restore`.
+    failing: Vec<&'static str>,
     calls: Mutex<Vec<String>>,
 }
 
@@ -110,11 +107,7 @@ impl Steps {
     fn new() -> Self {
         Self {
             held: DesktopResponse::ok("clipboard-get", json!({"type": "text", "text": "before"})),
-            focus_ok: true,
-            click_ok: true,
-            stage_ok: true,
-            select_ok: true,
-            restore_ok: true,
+            failing: Vec::new(),
             calls: Mutex::new(Vec::new()),
         }
     }
@@ -125,6 +118,10 @@ impl Steps {
 
     fn calls(&self) -> Vec<String> {
         self.calls.lock().unwrap().clone()
+    }
+
+    fn works(&self, step: &str) -> DesktopResponse {
+        Self::reply(!self.failing.contains(&step))
     }
 
     fn reply(ok: bool) -> DesktopResponse {
@@ -155,20 +152,24 @@ impl PasteSteps for Steps {
     }
     fn clipboard_clear(&self) -> DesktopResponse {
         self.note("clear");
-        Self::reply(self.restore_ok)
+        self.works("restore")
     }
     fn focus(&self, _request: RefRequest) -> DesktopResponse {
         self.note("focus");
-        Self::reply(self.focus_ok)
+        self.works("focus")
     }
     fn click(&self, _request: RefRequest) -> DesktopResponse {
         self.note("click");
-        Self::reply(self.click_ok)
+        self.works("click")
     }
     fn press(&self, request: PressRequest) -> DesktopResponse {
         let select = request.combo.ends_with("+a");
         self.note(if select { "select" } else { "paste" });
-        Self::reply(!select || self.select_ok)
+        if select {
+            self.works("select")
+        } else {
+            Self::reply(true)
+        }
     }
     fn wait(&self, _request: WaitRequest) -> DesktopResponse {
         self.note("wait");
@@ -208,11 +209,11 @@ fn a_field_that_takes_no_value_is_pasted_into_without_selecting_first() {
 #[test]
 fn a_field_that_will_not_focus_is_clicked_and_one_that_will_not_click_stops_the_paste() {
     let mut steps = Steps::new();
-    steps.focus_ok = false;
+    steps.failing.push("focus");
     assert!(paste_through(&steps, "Notes", &field(&[]), "typed").ok);
     assert!(steps.calls().contains(&"click".to_owned()));
 
-    steps.click_ok = false;
+    steps.failing.push("click");
     let steps = Steps {
         calls: Mutex::new(Vec::new()),
         ..steps
@@ -224,7 +225,7 @@ fn a_field_that_will_not_focus_is_clicked_and_one_that_will_not_click_stops_the_
 #[test]
 fn a_pasteboard_that_will_not_take_the_text_stops_the_paste_before_any_key() {
     let mut steps = Steps::new();
-    steps.stage_ok = false;
+    steps.failing.push("stage");
     assert!(!paste_through(&steps, "Notes", &field(&["SetValue"]), "typed").ok);
     assert_eq!(steps.calls(), ["get", "focus", "stage"]);
 }
@@ -232,7 +233,7 @@ fn a_pasteboard_that_will_not_take_the_text_stops_the_paste_before_any_key() {
 #[test]
 fn a_failed_select_all_is_the_pastes_failure_and_an_empty_pasteboard_is_cleared() {
     let mut steps = Steps::new();
-    steps.select_ok = false;
+    steps.failing.push("select");
     steps.held = DesktopResponse::ok("clipboard-get", json!({"found": false}));
     assert!(!paste_through(&steps, "Notes", &field(&["SetValue"]), "typed").ok);
     assert_eq!(steps.calls().last().map(String::as_str), Some("clear"));
@@ -241,7 +242,7 @@ fn a_failed_select_all_is_the_pastes_failure_and_an_empty_pasteboard_is_cleared(
 #[test]
 fn a_pasteboard_that_cannot_be_put_back_is_reported_beside_the_delivered_text() {
     let mut steps = Steps::new();
-    steps.restore_ok = false;
+    steps.failing.push("restore");
     let reply = paste_through(&steps, "Notes", &field(&[]), "typed");
     assert!(reply.ok);
     assert_eq!(reply.data, Some(json!({"clipboard_restored": false})));
