@@ -46,6 +46,11 @@ pub(crate) static MODEL_NETWORK_TEST_MUTEX: tokio::sync::Mutex<()> =
     tokio::sync::Mutex::const_new(());
 
 pub use agentic::{
+    BrowserCaptchaPage, CaptchaOutcome, CaptchaPage, CaptchaPageFuture, CaptchaRole, CaptchaScan,
+    CaptchaSettings, CaptchaVendor, CaptchaWidget, DEFAULT_CAPTCHA_ATTEMPTS, MAX_CAPTCHA_ATTEMPTS,
+    Rect, Viewport, solve_captcha,
+};
+pub use agentic::{
     JOURNAL_DEFAULT_DIR, JOURNAL_ENV, JOURNAL_FILE, JevRuntime, flow_guide, run_flow, validate_flow,
 };
 #[cfg(feature = "desktop")]
@@ -63,7 +68,7 @@ pub use planner::{
 pub use rescue::{Briefing, Guidance, MAX_RESCUE_STEPS, MAX_RESCUES, Rescuer, SCREEN_CHARS};
 pub use shape::{Harvest, RECORDS_CHARS, Shaper};
 pub use task::{
-    BrowserRunner, CaptureFuture, ContinuePaidAtShopRequest, ContinuePaymentRequest,
+    BrowserRunner, CaptchaFuture, CaptureFuture, ContinuePaidAtShopRequest, ContinuePaymentRequest,
     FailedStepRecovery, FailedStepRecoveryFuture, FailedStepRecoveryResult, FlowFuture, FlowRunner,
     HostWorkGuard, MAX_AWAIT_MS, MAX_TASKS, PageOriginFuture, PausedTaskError, PlanRecoveryFuture,
     PlanRecoveryRequest, PlanRecoveryResult, PrepareFuture, SecretHost, SecretTypeRequest,
