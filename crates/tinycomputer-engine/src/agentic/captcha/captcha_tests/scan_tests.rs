@@ -131,7 +131,7 @@ fn run_scan(page: &str) -> Option<(serde_json::Value, Vec<usize>)> {
     let scrolled = parsed["scrolled"]
         .as_array()?
         .iter()
-        .filter_map(|i| i.as_u64().map(|i| i as usize))
+        .filter_map(|i| i.as_u64().and_then(|i| usize::try_from(i).ok()))
         .collect();
     Some((parsed["scan"].clone(), scrolled))
 }
