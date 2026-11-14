@@ -3,7 +3,9 @@
 //! The widgets live in cross-origin frames the page cannot look into, so
 //! the scan reads only what the top document knows: each widget frame's
 //! address and box, and the hidden response field the vendor fills with a
-//! token once the captcha is passed.
+//! token once the captcha is passed. A token counts as a pass only when every
+//! shown checkbox has one of its own, so one answered widget never hides
+//! another that still waits.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -43,8 +45,20 @@ pub(super) const SCAN_SCRIPT: &str = r#"(() => {
       rect: { x: r.left, y: r.top, width: r.width, height: r.height } };
   });
   const names = ["g-recaptcha-response", "h-captcha-response", "cf-turnstile-response"];
-  const solved = names.some((name) => Array.from(document.getElementsByName(name))
-    .some((field) => typeof field.value === "string" && field.value.length > 0));
+  const filled = (field) => typeof field.value === "string" && field.value.length > 0;
+  // A widget's own response field sits beside its frame, so look only in the
+  // nearest few ancestors that hold one: another widget's token is not its.
+  const holdsToken = (el) => {
+    let node = el.parentElement;
+    for (let depth = 0; node && depth < 4; depth++, node = node.parentElement) {
+      const fields = names.flatMap((name) => Array.from(node.querySelectorAll(`[name="${name}"]`)));
+      if (fields.length > 0) return fields.some(filled);
+    }
+    return false;
+  };
+  const anyToken = names.some((name) => Array.from(document.getElementsByName(name)).some(filled));
+  const solved = anyToken
+    && found.filter((w) => w.role === "checkbox" && shown(w.el)).every((w) => holdsToken(w.el));
   return { widgets, solved, viewport: { width: vw, height: vh } };
 })()"#;
 
