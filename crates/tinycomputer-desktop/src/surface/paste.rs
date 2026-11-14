@@ -1,7 +1,76 @@
 //! Pasting through the clipboard and putting back what it held.
 
 use serde_json::{Value, json};
-use tinycomputer_bus::{ClipboardSetRequest, DesktopResponse};
+use tinycomputer_bus::{
+    ClipboardFormat, ClipboardGetRequest, ClipboardSetRequest, DesktopResponse, PressRequest,
+    RefRequest, WaitRequest,
+};
+use tinycomputer_core::surface::Candidate;
+
+use super::act::press_at;
+
+/// What a paste does to the machine, one call per step, so the order of the
+/// steps and what each failure leaves behind can be driven by a script.
+pub(super) trait PasteSteps {
+    /// Reads the pasteboard.
+    fn clipboard_get(&self, request: ClipboardGetRequest) -> DesktopResponse;
+    /// Writes the pasteboard.
+    fn clipboard_set(&self, request: ClipboardSetRequest) -> DesktopResponse;
+    /// Empties the pasteboard.
+    fn clipboard_clear(&self) -> DesktopResponse;
+    /// Focuses an element.
+    fn focus(&self, request: RefRequest) -> DesktopResponse;
+    /// Clicks an element.
+    fn click(&self, request: RefRequest) -> DesktopResponse;
+    /// Presses a key combination.
+    fn press(&self, request: PressRequest) -> DesktopResponse;
+    /// Waits.
+    fn wait(&self, request: WaitRequest) -> DesktopResponse;
+}
+
+/// Puts `text` in `target` through the pasteboard, then puts back what the
+/// pasteboard held; a failed restoration is reported in the response.
+pub(super) fn paste_through(
+    steps: &impl PasteSteps,
+    app: &str,
+    target: &Candidate,
+    text: &str,
+) -> DesktopResponse {
+    let previous = steps.clipboard_get(ClipboardGetRequest {
+        format: Some(ClipboardFormat::Auto),
+        out: None,
+    });
+    let focused = steps.focus(RefRequest::new(target.ref_id.clone()));
+    if !focused.ok {
+        let clicked = steps.click(RefRequest::new(target.ref_id.clone()));
+        if !clicked.ok {
+            return clicked;
+        }
+    }
+    let staged = steps.clipboard_set(ClipboardSetRequest::text(text));
+    if !staged.ok {
+        return staged;
+    }
+    let replaces = target
+        .available_actions
+        .iter()
+        .any(|action| action == "SetValue");
+    let selected = if replaces {
+        steps.press(press_at(app, "cmd+a"))
+    } else {
+        DesktopResponse::ok("press", json!({}))
+    };
+    let pasted = steps.press(press_at(app, "cmd+v"));
+    let _settled = steps.wait(WaitRequest::sleep(150));
+    let restored = restore_plan(&previous).is_none_or(|restore| {
+        match restore {
+            Restore::Set(request) => steps.clipboard_set(request),
+            Restore::Clear => steps.clipboard_clear(),
+        }
+        .ok
+    });
+    with_restoration(if selected.ok { pasted } else { selected }, restored)
+}
 
 /// What to put back on the pasteboard once a paste is done with it.
 #[derive(Debug, Clone, PartialEq, Eq)]
