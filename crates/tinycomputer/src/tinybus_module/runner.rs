@@ -10,8 +10,8 @@ use tinycomputer_browser::{
 use tinycomputer_bus::DesktopResponse;
 use tinycomputer_bus::agent::{PaymentMode, SurfaceKind, TaskConstraints, TaskId};
 use tinycomputer_engine::{
-    CaptureFuture, FlowFuture, FlowRunner, JevRuntime, PrepareFuture, TextFuture, UsageRecorder,
-    Workspace,
+    BrowserCaptchaPage, CaptchaFuture, CaptchaOutcome, CaptchaSettings, CaptureFuture, FlowFuture,
+    FlowRunner, JevRuntime, PrepareFuture, TextFuture, UsageRecorder, Workspace,
 };
 
 use super::config::BrowserDefaults;
@@ -32,6 +32,9 @@ pub(super) struct WorkspaceRunner {
     /// the desktop.
     pub(super) cursor: Arc<ScreenCursor>,
     pub(super) workspaces: Mutex<HashMap<TaskId, (TaskWorkspace, Option<BrowserSurface>)>>,
+    /// The captcha solver's image-reading Jev route and settings, when the
+    /// module configuration has a `captcha` section.
+    pub(super) captcha: Option<(JevRuntime, CaptchaSettings)>,
 }
 
 impl WorkspaceRunner {
@@ -46,6 +49,7 @@ impl WorkspaceRunner {
             defaults: BrowserDefaults::default(),
             cursor: Arc::new(ScreenCursor::off()),
             workspaces: Mutex::new(HashMap::new()),
+            captcha: None,
         }
     }
 
@@ -191,6 +195,30 @@ impl FlowRunner for WorkspaceRunner {
                 .await
                 .ok()
         })
+    }
+
+    fn solve_captcha(&self, task: &TaskId) -> CaptchaFuture {
+        let Some((runtime, settings)) = self.captcha.clone() else {
+            return Box::pin(async { CaptchaOutcome::Unavailable });
+        };
+        // Only on the page the task is on, as `capture` looks.
+        let session = self
+            .workspaces
+            .lock()
+            .ok()
+            .and_then(|workspaces| {
+                workspaces
+                    .get(task)
+                    .filter(|(workspace, _)| workspace.browser_active())
+                    .and_then(|(_, browser)| browser.clone())
+            })
+            .and_then(|browser| browser.session());
+        let Some(session) = session else {
+            return Box::pin(async { CaptchaOutcome::Unavailable });
+        };
+        let page = BrowserCaptchaPage::new(self.browser.clone(), session);
+        let runtime = runtime.journaled_as(&format!("task-{task}"));
+        Box::pin(async move { tinycomputer_engine::solve_captcha(&page, &runtime, &settings).await })
     }
 
     fn prepare(&self, task: &TaskId, constraints: &TaskConstraints) -> PrepareFuture {

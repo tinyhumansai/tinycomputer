@@ -213,10 +213,16 @@ impl DesktopService {
                 Ok::<_, crate::Error>((planner, rescuer, shaper))
             })
             .transpose()?;
+        let captcha = computer
+            .captcha
+            .as_ref()
+            .map(captcha_solver)
+            .transpose()?;
         let browser_defaults = BrowserDefaults::from_config(computer.browser.as_ref(), egress);
         let mut runner = WorkspaceRunner::new(desktop.clone(), jev.clone(), browser.clone());
         runner.defaults.clone_from(&browser_defaults);
         runner.cursor = cursor;
+        runner.captcha = captcha;
         let mut tasks = agentic::Tasks::new(Arc::new(runner));
         if let Some((planner, rescuer, shaper)) = planner {
             tasks = tasks
@@ -271,6 +277,31 @@ impl DesktopService {
     pub(in crate::tinybus_module) fn jev_runtime(&self) -> Option<agentic::JevRuntime> {
         self.jev.clone()
     }
+}
+
+/// The captcha solver's own Jev route and settings, from `config`: the
+/// route's model defaults to one that reads images.
+///
+/// # Errors
+///
+/// [`crate::Error::ConfigFieldType`] when the route cannot form a client.
+fn captcha_solver(
+    config: &tinycomputer_bus::config::CaptchaConfig,
+) -> Result<(agentic::JevRuntime, tinycomputer_engine::CaptchaSettings)> {
+    let mut route = config.jev.clone();
+    if route.model.as_deref().is_none_or(|model| model.trim().is_empty()) {
+        route.model = Some(tinycomputer_bus::config::DEFAULT_CAPTCHA_MODEL.to_owned());
+    }
+    let runtime =
+        agentic::JevRuntime::configure(&route).map_err(|_| crate::Error::ConfigFieldType {
+            field: "captcha",
+            expected: "a captcha configuration with a valid Jev route",
+        })?;
+    let settings = config.max_attempts.map_or_else(
+        tinycomputer_engine::CaptchaSettings::default,
+        tinycomputer_engine::CaptchaSettings::with_attempts,
+    );
+    Ok((runtime, settings))
 }
 
 #[cfg(test)]
