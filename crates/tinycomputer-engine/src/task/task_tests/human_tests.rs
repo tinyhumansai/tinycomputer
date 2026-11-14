@@ -229,3 +229,51 @@ async fn a_captcha_that_keeps_returning_goes_to_a_person_after_three_solves() {
     );
     assert_eq!(script.requests.lock().unwrap().len(), 4);
 }
+
+#[tokio::test]
+async fn the_solver_reserves_its_model_calls_against_the_task() {
+    let (tasks, script) = controller(vec![
+        failed_at_step_two(),
+        finished_run(FlowStopReason::Completed, vec![], &[], None),
+    ]);
+    *script.screen.lock().unwrap() = vec!["Verify you are human".to_owned()];
+    script
+        .captcha
+        .lock()
+        .unwrap()
+        .push_back(crate::CaptchaOutcome::Solved { attempts: 1 });
+    let view = start(
+        &tasks,
+        json!({"app": "browser", "steps": ["a", "b", "c"]}),
+        &[],
+    );
+    settle(&tasks, &view.id).await;
+    assert_eq!(
+        *script.captcha_reserved.lock().unwrap(),
+        [true],
+        "the solver's reservation is live and counted against the task"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_solver_that_outruns_the_task_time_budget_fails_the_task() {
+    let (tasks, script) = controller(vec![failed_at_step_two()]);
+    *script.screen.lock().unwrap() = vec!["Verify you are human".to_owned()];
+    script
+        .captcha_hangs
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let reply = tasks.start(&StartTaskRequest {
+        flow: Some(flow(json!({"app": "browser", "steps": ["a", "b", "c"]}))),
+        budget: tinycomputer_bus::agent::TaskBudget {
+            max_elapsed_ms: Some(5_000),
+            ..tinycomputer_bus::agent::TaskBudget::default()
+        },
+        ..StartTaskRequest::default()
+    });
+    let view = reply.data.unwrap();
+    let status = settle(&tasks, &view.id).await.status;
+    assert!(
+        matches!(&status, TaskStatus::Failed { reason, .. } if reason.contains("time budget")),
+        "{status:?}"
+    );
+}

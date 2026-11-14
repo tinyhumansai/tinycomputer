@@ -101,6 +101,8 @@ struct Script {
     captcha_calls: std::sync::atomic::AtomicU32,
     /// Whether the solver's budget scope let each call reserve a model call.
     captcha_reserved: Mutex<Vec<bool>>,
+    /// Whether `solve_captcha` never answers, like a slow solver.
+    captcha_hangs: std::sync::atomic::AtomicBool,
 }
 
 impl FlowRunner for Script {
@@ -213,7 +215,13 @@ impl FlowRunner for Script {
             .unwrap()
             .pop_front()
             .unwrap_or(crate::CaptchaOutcome::Unavailable);
-        Box::pin(async move { outcome })
+        let hangs = self.captcha_hangs.load(std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async move {
+            if hangs {
+                std::future::pending::<()>().await;
+            }
+            outcome
+        })
     }
 
     fn release(&self, task: &TaskId) {
