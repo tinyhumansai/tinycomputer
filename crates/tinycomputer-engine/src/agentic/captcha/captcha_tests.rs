@@ -209,7 +209,10 @@ fn near(actual: (f64, f64), expected: (f64, f64)) -> bool {
 
 #[test]
 fn settings_clamp_their_attempts() {
-    assert_eq!(CaptchaSettings::default().max_attempts, DEFAULT_CAPTCHA_ATTEMPTS);
+    assert_eq!(
+        CaptchaSettings::default().max_attempts,
+        DEFAULT_CAPTCHA_ATTEMPTS
+    );
     assert_eq!(CaptchaSettings::with_attempts(0).max_attempts, 1);
     assert_eq!(
         CaptchaSettings::with_attempts(99).max_attempts,

@@ -85,7 +85,10 @@ fn a_long_thin_region_is_scaled_down_and_padded() {
     assert!((x - 1500.0).abs() < 1.0, "{x}");
     assert!((y - 99.0).abs() < 2.0, "{y}");
     let (_, below) = region.point_in(&fitted, 0.5, 0.9);
-    assert!((below - 200.0).abs() < f64::EPSILON, "padding clamps to the edge");
+    assert!(
+        (below - 200.0).abs() < f64::EPSILON,
+        "padding clamps to the edge"
+    );
 }
 
 #[test]

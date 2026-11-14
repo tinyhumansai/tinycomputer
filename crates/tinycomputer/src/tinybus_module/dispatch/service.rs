@@ -218,11 +218,7 @@ impl DesktopService {
                 Ok::<_, crate::Error>((planner, rescuer, shaper))
             })
             .transpose()?;
-        let captcha = computer
-            .captcha
-            .as_ref()
-            .map(captcha_solver)
-            .transpose()?;
+        let captcha = computer.captcha.as_ref().map(captcha_solver).transpose()?;
         let browser_defaults = BrowserDefaults::from_config(computer.browser.as_ref(), egress);
         let mut runner = WorkspaceRunner::new(desktop.clone(), jev.clone(), browser.clone());
         runner.defaults.clone_from(&browser_defaults);
@@ -294,7 +290,11 @@ fn captcha_solver(
     config: &tinycomputer_bus::config::CaptchaConfig,
 ) -> Result<(agentic::JevRuntime, tinycomputer_engine::CaptchaSettings)> {
     let mut route = config.jev.clone();
-    if route.model.as_deref().is_none_or(|model| model.trim().is_empty()) {
+    if route
+        .model
+        .as_deref()
+        .is_none_or(|model| model.trim().is_empty())
+    {
         route.model = Some(tinycomputer_bus::config::DEFAULT_CAPTCHA_MODEL.to_owned());
     }
     let runtime =

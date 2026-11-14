@@ -218,7 +218,9 @@ impl FlowRunner for WorkspaceRunner {
         };
         let page = BrowserCaptchaPage::new(self.browser.clone(), session);
         let runtime = runtime.journaled_as(&format!("task-{task}"));
-        Box::pin(async move { tinycomputer_engine::solve_captcha(&page, &runtime, &settings).await })
+        Box::pin(
+            async move { tinycomputer_engine::solve_captcha(&page, &runtime, &settings).await },
+        )
     }
 
     fn prepare(&self, task: &TaskId, constraints: &TaskConstraints) -> PrepareFuture {

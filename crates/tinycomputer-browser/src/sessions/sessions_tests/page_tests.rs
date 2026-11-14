@@ -924,7 +924,10 @@ async fn pressing_a_point_moves_presses_and_releases_there() {
         .map(|command| command["eventType"].as_str().unwrap())
         .collect();
     assert_eq!(events, ["mouseMoved", "mousePressed", "mouseReleased"]);
-    assert!(mice.iter().all(|command| command["x"] == 120.5 && command["y"] == 64.0));
+    assert!(
+        mice.iter()
+            .all(|command| command["x"] == 120.5 && command["y"] == 64.0)
+    );
     assert!(matches!(
         browser.press_point(&id, f64::NAN, 1.0).await,
         Err(Error::InvalidInput { .. })

@@ -329,9 +329,10 @@ pub(in crate::agentic::flow) fn split(
 /// The request `parts` were cut from: the first part's state with every
 /// part's questions, as the journal and the trace record a decision.
 pub(in crate::agentic::flow) fn whole(parts: &[EvaluationRequest]) -> EvaluationRequest {
-    let mut whole = parts.first().cloned().unwrap_or_else(|| {
-        EvaluationRequest::new(String::new(), Value::Null, BTreeMap::new())
-    });
+    let mut whole = parts
+        .first()
+        .cloned()
+        .unwrap_or_else(|| EvaluationRequest::new(String::new(), Value::Null, BTreeMap::new()));
     for part in parts.iter().skip(1) {
         whole.questions.extend(part.questions.clone());
     }

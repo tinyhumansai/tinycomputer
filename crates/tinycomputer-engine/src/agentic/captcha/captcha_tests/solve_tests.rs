@@ -97,7 +97,11 @@ async fn a_grid_challenge_presses_the_tiles_jev_is_sure_of_then_verify() {
     let asked = asked.lock().unwrap();
     assert_eq!(asked.len(), 2);
     assert_eq!(asked[1].questions.len(), 9);
-    assert_eq!(asked[1].assets.len(), 10, "the challenge and its nine tiles");
+    assert_eq!(
+        asked[1].assets.len(),
+        10,
+        "the challenge and its nine tiles"
+    );
     asked[1].validate().unwrap();
 }
 

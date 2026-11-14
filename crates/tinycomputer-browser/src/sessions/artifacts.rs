@@ -35,7 +35,11 @@ impl Browser {
             };
             match base64::engine::general_purpose::STANDARD.decode(&chunk.data) {
                 Ok(data) => bytes.extend_from_slice(&data),
-                Err(_) => break Err(crate::error::Error::failed("a held screenshot was not base64")),
+                Err(_) => {
+                    break Err(crate::error::Error::failed(
+                        "a held screenshot was not base64",
+                    ));
+                }
             }
             if chunk.eof {
                 break Ok(());

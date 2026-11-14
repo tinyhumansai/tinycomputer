@@ -65,7 +65,10 @@ pub async fn solve_captcha(
         }
         if let Some(challenge) = scan.visible(CaptchaRole::Challenge) {
             if attempts >= max_attempts {
-                return unsolved(attempts, format!("still unsolved after {attempts} tries: {last}"));
+                return unsolved(
+                    attempts,
+                    format!("still unsolved after {attempts} tries: {last}"),
+                );
             }
             attempts += 1;
             match challenge_round(page, jev, &scan, challenge).await {
@@ -165,7 +168,9 @@ async fn press_checkbox(
     if page.press(point.0, point.1).await {
         Ok(())
     } else {
-        Err(Round::Failed("the checkbox could not be pressed".to_owned()))
+        Err(Round::Failed(
+            "the checkbox could not be pressed".to_owned(),
+        ))
     }
 }
 
@@ -211,7 +216,11 @@ async fn challenge_round(
         .ok_or_else(|| Round::Failed("Jev could not read the challenge".to_owned()))?;
     let layout = match answers.answers.get("layout") {
         Some(Answer::Choice(choice)) => choice.choice.clone(),
-        _ => return Err(Round::Failed("Jev did not say what the challenge is".to_owned())),
+        _ => {
+            return Err(Round::Failed(
+                "Jev did not say what the challenge is".to_owned(),
+            ));
+        }
     };
     let Some(size) = grid_size(&layout) else {
         return Err(Round::Unsupported(format!(
@@ -280,7 +289,9 @@ async fn challenge_round(
     if page.press(verify.0, verify.1).await {
         Ok(())
     } else {
-        Err(Round::Failed("the verify button could not be pressed".to_owned()))
+        Err(Round::Failed(
+            "the verify button could not be pressed".to_owned(),
+        ))
     }
 }
 
@@ -310,7 +321,9 @@ fn layout_question() -> Question {
         ),
         (
             "grid_4x4".to_owned(),
-            Some(json!("one picture cut into a 4 by 4 grid of squares to pick from")),
+            Some(json!(
+                "one picture cut into a 4 by 4 grid of squares to pick from"
+            )),
         ),
         (
             "typed".to_owned(),

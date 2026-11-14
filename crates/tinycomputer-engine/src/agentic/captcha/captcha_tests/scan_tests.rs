@@ -21,7 +21,10 @@ fn a_scan_reads_widgets_their_boxes_and_a_solved_token() {
     });
     let scan = CaptchaScan::parse(&value).unwrap();
     assert_eq!(scan.widgets.len(), 3);
-    assert!(scan.visible(CaptchaRole::Challenge).is_none(), "hidden is not shown");
+    assert!(
+        scan.visible(CaptchaRole::Challenge).is_none(),
+        "hidden is not shown"
+    );
     let checkbox = scan.visible(CaptchaRole::Checkbox).unwrap();
     assert_eq!(checkbox.vendor, CaptchaVendor::Recaptcha);
     assert!((checkbox.rect.width - 304.0).abs() < f64::EPSILON);

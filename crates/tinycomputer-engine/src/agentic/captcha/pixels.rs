@@ -66,7 +66,10 @@ impl Region {
     /// The part between the fractions `left`..`right` of its width and
     /// `top`..`bottom` of its height.
     pub(super) fn part(&self, left: f64, top: f64, right: f64, bottom: f64) -> Option<Self> {
-        let (width, height) = (f64::from(self.image.width()), f64::from(self.image.height()));
+        let (width, height) = (
+            f64::from(self.image.width()),
+            f64::from(self.image.height()),
+        );
         self.crop_px(left * width, top * height, right * width, bottom * height)
     }
 
