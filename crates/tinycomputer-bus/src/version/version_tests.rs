@@ -16,8 +16,11 @@ fn the_contract_binds_to_itself() {
 
 #[test]
 fn a_newer_minor_on_the_module_side_binds() {
-    assert!(is_compatible((3, 0)));
+    assert!(is_compatible((3, 1)));
     assert!(is_compatible((3, 97)));
+    // 3.1 adds the optional `browser.profile` module configuration field. A
+    // 3.0 module rejects it as unknown, so a 3.1 host cannot bind to one.
+    assert!(!is_compatible((3, 0)));
     // The history below is the 2.x line, which 3.0 no longer binds at all.
     // 2.24 adds same-task flow-to-planner handoff to StartTask.
     // 2.22 adds optional host-held secret handles to StartTask and RunFlow.
