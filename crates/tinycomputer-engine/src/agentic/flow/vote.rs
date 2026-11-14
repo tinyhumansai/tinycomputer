@@ -290,6 +290,16 @@ fn average(answers: &[Answer]) -> Option<Answer> {
             merged.confidence = scores.iter().map(|score| score.confidence).sum::<f64>() / count;
             Answer::Score(merged)
         }
+        // Boxes do not average into a box any framing drew: keep the one
+        // its framing was surest of.
+        Answer::Box(_) => answers
+            .iter()
+            .filter_map(|answer| match answer {
+                Answer::Box(found) => Some(*found),
+                _ => None,
+            })
+            .max_by(|left, right| left.confidence.total_cmp(&right.confidence))
+            .map(Answer::Box)?,
     })
 }
 
