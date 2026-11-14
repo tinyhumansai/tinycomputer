@@ -50,7 +50,9 @@ task is on the browser:
 1. **Scan** (`agentic/captcha/scan.rs`). A fixed script in the top document
    lists the widget frames by address with their boxes, and reports whether a
    vendor response field (`g-recaptcha-response`, `h-captcha-response`,
-   `cf-turnstile-response`) holds a token. The widget's own frames are
+   `cf-turnstile-response`) holds a token. A token is a pass only when every
+   shown checkbox has one beside its own frame, so one answered widget never
+   hides another that still waits. The widget's own frames are
    cross-origin and are never read.
 2. **Token present**: solved.
 3. **Challenge showing**: cut it out of a viewport screenshot, scale it into
@@ -59,8 +61,10 @@ task is on the browser:
    a Box for the verify button. Not a grid: `Unsupported`. Then cut the grid
    into tiles and ask one Noul per tile, each tile its own image beside the
    challenge. Press tiles at or over `TILE_THRESHOLD`, then verify.
-4. **Checkbox showing**: a Box question finds it; under `BOX_CONFIDENCE`, its
-   usual place (28 CSS pixels in, halfway down) stands in. Press it.
+4. **Checkbox showing**: a Box question finds it; under `BOX_CONFIDENCE` the
+   round fails and nothing is pressed. A grid or verify button Jev cannot
+   locate with that confidence fails the round the same way: a guessed
+   position is never pressed.
 5. **Nothing showing**: solved if the solver acted, `Unsupported` if not.
 
 Presses are trusted pointer events at a viewport point
@@ -69,7 +73,10 @@ gate and allowed origins.
 
 On `Solved` the failed step and the rest run again, as after a person's
 `ContinueTask`. A drive gets past at most `MAX_SOLVED_WALLS` (3) walls on its
-own; the next goes to a person. On `Unsolved` or `Unsupported` the task
+own; the next goes to a person. The solve is host work of the task: each
+Jev question reserves one of the task's model calls first and is recorded in
+its usage, its time is charged to the task, and a solve that outruns the
+remaining `max_elapsed_ms` fails the task like any other overrun. On `Unsolved` or `Unsupported` the task
 pauses as before, its `reason` naming what was tried, and its report keeps the
 screenshot every stop captures.
 
