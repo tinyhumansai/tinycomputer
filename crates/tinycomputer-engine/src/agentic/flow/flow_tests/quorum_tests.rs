@@ -41,6 +41,7 @@ fn request() -> EvaluationRequest {
             ),
             ("page_kind".to_owned(), choice(&["product", "cart"], false)),
         ]),
+        assets: BTreeMap::new(),
     }
 }
 
