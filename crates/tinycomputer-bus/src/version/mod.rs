@@ -8,7 +8,7 @@
 //! release workflow bumps, which tracks the shipped artifact.
 
 /// The wire contract version this crate defines.
-pub const CONTRACT_VERSION: (u32, u32) = (3, 0);
+pub const CONTRACT_VERSION: (u32, u32) = (3, 1);
 
 /// Returns whether a host holding [`CONTRACT_VERSION`] can bind to a module
 /// reporting `module`.
