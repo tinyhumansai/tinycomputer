@@ -31,7 +31,6 @@ mod scan;
 mod solve;
 
 #[cfg(test)]
-#[path = "captcha_tests.rs"]
 mod captcha_tests;
 
 use std::future::Future;
