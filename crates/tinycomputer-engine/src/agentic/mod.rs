@@ -16,6 +16,7 @@
 
 #[cfg(feature = "desktop")]
 mod backend;
+mod captcha;
 #[cfg(feature = "desktop")]
 mod continuation;
 mod flow;
@@ -51,4 +52,9 @@ use reply::{internal_error, merge_metrics, provider_error, response};
 #[cfg(feature = "desktop")]
 pub use resolve::resolve_intent;
 use runtime::Evaluator;
+pub use captcha::{
+    BrowserCaptchaPage, CaptchaOutcome, CaptchaPage, CaptchaPageFuture, CaptchaRole, CaptchaScan,
+    CaptchaSettings, CaptchaVendor, CaptchaWidget, DEFAULT_CAPTCHA_ATTEMPTS, MAX_CAPTCHA_ATTEMPTS,
+    Rect, Viewport, solve_captcha,
+};
 pub use runtime::JevRuntime;
