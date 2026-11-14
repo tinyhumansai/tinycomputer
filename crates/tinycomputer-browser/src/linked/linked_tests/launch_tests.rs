@@ -185,7 +185,11 @@ fn a_host_profile_launches_under_the_enforced_proxy_without_extensions() {
         )
         .expect("host profile launches");
         let args = launch["args"].as_array().expect("args");
-        assert!(args.contains(&json!("--disable-extensions")), "{command}");
+        assert_eq!(
+            args.contains(&json!("--disable-extensions")),
+            command.get("profile").is_some(),
+            "{command}"
+        );
         assert_eq!(launch["proxy"]["server"], "http://127.0.0.1:39123");
         // The profile is used only when the session asked for it: a session
         // that named none still starts fresh.
