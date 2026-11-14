@@ -244,3 +244,16 @@ fn a_pasteboard_that_cannot_be_put_back_is_reported_beside_the_delivered_text() 
     assert!(reply.ok);
     assert_eq!(reply.data, Some(json!({"clipboard_restored": false})));
 }
+
+#[test]
+fn a_failed_select_all_never_presses_paste_and_still_puts_the_pasteboard_back() {
+    let mut steps = Steps::new();
+    steps.failing.push("select");
+    let reply = paste_through(&steps, "Notes", &field(&["SetValue"]), "typed");
+    assert!(!reply.ok, "the select failure is the paste's failure");
+    assert_eq!(
+        steps.calls(),
+        ["get", "focus", "stage", "select", "restore"],
+        "no paste, no settle wait: the staged text must not land appended to old text"
+    );
+}
