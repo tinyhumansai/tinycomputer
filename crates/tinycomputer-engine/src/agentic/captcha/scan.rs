@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// The script the scan evaluates in the top document. It scrolls a widget
-/// that is off screen into view, only when no challenge is showing, and
+/// that is off screen and still unanswered into view, only when no challenge
+/// is showing, and
 /// otherwise changes nothing.
 pub(super) const SCAN_SCRIPT: &str = r#"(() => {
   const kinds = [
@@ -33,24 +34,30 @@ pub(super) const SCAN_SCRIPT: &str = r#"(() => {
   for (const [vendor, role, selector] of kinds) {
     for (const el of document.querySelectorAll(selector)) found.push({ vendor, role, el });
   }
-  const challenge = found.some((w) => w.role === "challenge" && shown(w.el)
-    && inView(w.el.getBoundingClientRect()));
-  if (!challenge) {
-    const box = found.find((w) => w.role === "checkbox" && shown(w.el));
-    if (box && !inView(box.el.getBoundingClientRect())) box.el.scrollIntoView({ block: "center" });
-  }
   const names = ["g-recaptcha-response", "h-captcha-response", "cf-turnstile-response"];
+  const checkboxSelector = kinds.filter(([, role]) => role === "checkbox").map(([, , sel]) => sel).join(",");
   const filled = (field) => typeof field.value === "string" && field.value.length > 0;
   // A widget's own response field sits beside its frame, so look only in the
   // nearest few ancestors that hold one: another widget's token is not its.
+  // When that ancestor holds several checkboxes the field could belong to
+  // any of them, so none counts as answered.
   const holdsToken = (el) => {
     let node = el.parentElement;
     for (let depth = 0; node && depth < 4; depth++, node = node.parentElement) {
       const fields = names.flatMap((name) => Array.from(node.querySelectorAll(`[name="${name}"]`)));
-      if (fields.length > 0) return fields.some(filled);
+      if (fields.length > 0) {
+        if (node.querySelectorAll(checkboxSelector).length > 1) return false;
+        return fields.some(filled);
+      }
     }
     return false;
   };
+  const challenge = found.some((w) => w.role === "challenge" && shown(w.el)
+    && inView(w.el.getBoundingClientRect()));
+  if (!challenge) {
+    const box = found.find((w) => w.role === "checkbox" && shown(w.el) && !holdsToken(w.el));
+    if (box && !inView(box.el.getBoundingClientRect())) box.el.scrollIntoView({ block: "center" });
+  }
   const widgets = found.map(({ vendor, role, el }) => {
     const r = el.getBoundingClientRect();
     return { vendor, role, visible: shown(el) && inView(r),

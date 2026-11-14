@@ -114,7 +114,11 @@ fn run_scan(page: &str) -> Option<(serde_json::Value, Vec<usize>)> {
          console.log(JSON.stringify({{ scan: out.result, scrolled: frames.flatMap((f, i) => f.scrolled ? [i] : []) }}));"
     );
     let mut child = Command::new("node")
-        .args(["-e", "process.argv[1] = require('fs').readFileSync(0, 'utf8'); eval(process.argv[2])", "x"])
+        .args([
+            "-e",
+            "process.argv[1] = require('fs').readFileSync(0, 'utf8'); eval(process.argv[2])",
+            "x",
+        ])
         .arg(&program)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -140,7 +144,11 @@ fn the_scan_scrolls_to_the_first_unanswered_checkbox_not_the_first_shown_one() {
     let Some((scan, scrolled)) = run_scan(page) else {
         return;
     };
-    assert_eq!(scrolled, [1], "the waiting widget is scrolled to, not the answered one");
+    assert_eq!(
+        scrolled,
+        [1],
+        "the waiting widget is scrolled to, not the answered one"
+    );
     assert_eq!(scan["widgets"][0]["answered"], true);
     assert_eq!(scan["widgets"][1]["answered"], false);
     assert_eq!(scan["solved"], false);
@@ -152,7 +160,10 @@ fn a_response_field_shared_by_two_checkboxes_does_not_answer_either() {
     let Some((scan, _)) = run_scan(page) else {
         return;
     };
-    assert_eq!(scan["widgets"][0]["answered"], false, "ownership is ambiguous");
+    assert_eq!(
+        scan["widgets"][0]["answered"], false,
+        "ownership is ambiguous"
+    );
     assert_eq!(scan["widgets"][1]["answered"], false);
     assert_eq!(scan["solved"], false);
 }
