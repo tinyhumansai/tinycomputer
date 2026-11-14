@@ -60,8 +60,15 @@ pub(super) fn paste_through(
     } else {
         DesktopResponse::ok("press", json!({}))
     };
-    let pasted = steps.press(press_at(app, "cmd+v"));
-    let _settled = steps.wait(WaitRequest::sleep(150));
+    // Without a successful select-all the paste would land beside the old
+    // text instead of replacing it, so skip it and report the select failure.
+    let outcome = if selected.ok {
+        let pasted = steps.press(press_at(app, "cmd+v"));
+        let _settled = steps.wait(WaitRequest::sleep(150));
+        pasted
+    } else {
+        selected
+    };
     let restored = restore_plan(&previous).is_none_or(|restore| {
         match restore {
             Restore::Set(request) => steps.clipboard_set(request),
@@ -69,7 +76,7 @@ pub(super) fn paste_through(
         }
         .ok
     });
-    with_restoration(if selected.ok { pasted } else { selected }, restored)
+    with_restoration(outcome, restored)
 }
 
 /// What to put back on the pasteboard once a paste is done with it.
