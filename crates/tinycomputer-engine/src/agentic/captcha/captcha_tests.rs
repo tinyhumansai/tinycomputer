@@ -1,6 +1,8 @@
 //! Tests for the captcha solver: reading a scan, mapping pixels to the
 //! viewport, and the loop against a scripted page and a scripted Jev.
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use std::collections::{BTreeMap, VecDeque};
 use std::io::Cursor;
 use std::sync::{Arc, Mutex};

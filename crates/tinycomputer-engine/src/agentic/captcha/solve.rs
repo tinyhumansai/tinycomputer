@@ -183,19 +183,23 @@ fn grid_size(layout: &str) -> Option<u32> {
     }
 }
 
-async fn challenge_round(
-    page: &dyn CaptchaPage,
+/// What Jev read off a challenge: its grid of tiles and its verify button.
+struct Reading {
+    size: u32,
+    grid: Region,
+    verify: (f64, f64),
+}
+
+/// Asks Jev what the challenge in `region` (sent as `fitted`) is, where its
+/// tiles are, and where its verify button is.
+async fn read_challenge(
     jev: &JevRuntime,
-    scan: &CaptchaScan,
-    challenge: &CaptchaWidget,
-) -> Result<(), Round> {
-    let region = widget_region(page, scan, challenge).await?;
-    let fitted = region
-        .fit()
-        .ok_or_else(|| Round::Failed("the challenge could not be encoded".to_owned()))?;
+    region: &Region,
+    fitted: &Fitted,
+) -> Result<Reading, Round> {
     let reading = image_request(
         jev,
-        &[("challenge", &fitted)],
+        &[("challenge", fitted)],
         [
             ("layout".to_owned(), layout_question()),
             (
@@ -230,8 +234,8 @@ async fn challenge_round(
     let grid = sure_box(&answers, "grid")
         .and_then(|found| {
             let edges = found.edges;
-            let (left, top) = to_region_fraction(&region, &fitted, edges.left, edges.top);
-            let (right, bottom) = to_region_fraction(&region, &fitted, edges.right, edges.bottom);
+            let (left, top) = to_region_fraction(region, fitted, edges.left, edges.top);
+            let (right, bottom) = to_region_fraction(region, fitted, edges.right, edges.bottom);
             region.part(left, top, right, bottom)
         })
         .ok_or_else(|| Round::Failed("Jev could not find the tiles".to_owned()))?;
@@ -239,9 +243,23 @@ async fn challenge_round(
         || region.point(VERIFY_AT.0, VERIFY_AT.1),
         |found| {
             let (x, y) = found.edges.centre();
-            region.point_in(&fitted, x, y)
+            region.point_in(fitted, x, y)
         },
     );
+    Ok(Reading { size, grid, verify })
+}
+
+async fn challenge_round(
+    page: &dyn CaptchaPage,
+    jev: &JevRuntime,
+    scan: &CaptchaScan,
+    challenge: &CaptchaWidget,
+) -> Result<(), Round> {
+    let region = widget_region(page, scan, challenge).await?;
+    let fitted = region
+        .fit()
+        .ok_or_else(|| Round::Failed("the challenge could not be encoded".to_owned()))?;
+    let Reading { size, grid, verify } = read_challenge(jev, &region, &fitted).await?;
 
     let cells = grid.cells(size, size);
     let tiles: Vec<(String, Fitted)> = cells
