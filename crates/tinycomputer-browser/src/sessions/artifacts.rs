@@ -1,8 +1,10 @@
 //! What sessions leave behind: held outputs and downloads.
 
+use base64::Engine as _;
 use serde_json::{Value, json};
 use tinycomputer_bus::browser::{
-    DownloadId, DownloadInfo, DownloadState, DownloadWaitRequest, OutputChunk, OutputId, SessionId,
+    DownloadId, DownloadInfo, DownloadState, DownloadWaitRequest, OutputChunk, OutputId,
+    ScreenshotRequest, SessionId,
 };
 
 use super::Browser;
@@ -11,6 +13,38 @@ use crate::error::Error;
 use crate::error::Result;
 
 impl Browser {
+    /// Takes a screenshot and hands its bytes straight back, holding
+    /// nothing: for code inside the module that looks at the page itself,
+    /// such as the captcha solver, rather than a caller collecting it.
+    ///
+    /// # Errors
+    ///
+    /// Whatever [`Browser::screenshot`] reports, and a failure when the held
+    /// image cannot be read back.
+    pub async fn screenshot_bytes(
+        &self,
+        id: &SessionId,
+        request: ScreenshotRequest,
+    ) -> Result<Vec<u8>> {
+        let held = self.screenshot(id, request).await?;
+        let mut bytes = Vec::with_capacity(usize::try_from(held.total_bytes).unwrap_or(0));
+        let read = loop {
+            let chunk = match self.read_output(&held.id, bytes.len() as u64, held.total_bytes) {
+                Ok(chunk) => chunk,
+                Err(error) => break Err(error),
+            };
+            match base64::engine::general_purpose::STANDARD.decode(&chunk.data) {
+                Ok(data) => bytes.extend_from_slice(&data),
+                Err(_) => break Err(crate::error::Error::failed("a held screenshot was not base64")),
+            }
+            if chunk.eof {
+                break Ok(());
+            }
+        };
+        self.release_output(&held.id)?;
+        read.map(|()| bytes)
+    }
+
     /// Reads up to `len` bytes of a held output from `offset`.
     ///
     /// # Errors

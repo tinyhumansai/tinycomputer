@@ -353,6 +353,26 @@ impl Browser {
         })
     }
 
+    /// Presses the left mouse button at the viewport point (`x`, `y`), in CSS
+    /// pixels, as a person's hand does: whatever is on top there — a
+    /// cross-origin frame included — takes it as trusted input. Each of the
+    /// pointer's events is a raw command, so the action gate and the allowed
+    /// origins see every one, as they see [`Browser::command`].
+    ///
+    /// # Errors
+    ///
+    /// Whatever [`Browser::command`] reports for an event, and
+    /// [`Error::InvalidInput`] for a point that is not finite.
+    pub async fn press_point(&self, id: &SessionId, x: f64, y: f64) -> Result<()> {
+        if !x.is_finite() || !y.is_finite() {
+            return Err(Error::invalid_input("a point to press must be finite"));
+        }
+        for event in convert::press_at(x, y) {
+            self.command(id, event).await?;
+        }
+        Ok(())
+    }
+
     /// Runs one raw agent-browser command, such as
     /// `{"action": "inputvalue", "selector": "@e3"}`, and returns its `data`.
     ///
