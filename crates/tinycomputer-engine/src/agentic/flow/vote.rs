@@ -84,6 +84,7 @@ fn frame(request: &EvaluationRequest, index: usize) -> Framing {
             }
             Question::Noul(noul) => add_perspective(&mut noul.instructions, perspective),
             Question::Score(score) => add_perspective(&mut score.instructions, perspective),
+            Question::Box(found) => add_perspective(&mut found.instructions, perspective),
         }
     }
     Framing {
