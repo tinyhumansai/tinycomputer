@@ -314,7 +314,17 @@ pub trait FlowRunner: Send + Sync + 'static {
     /// [`CaptchaOutcome::Solved`](crate::CaptchaOutcome::Solved) the failed
     /// step runs again. [`CaptchaOutcome::Unavailable`](crate::CaptchaOutcome::Unavailable)
     /// by default.
-    fn solve_captcha(&self, _task: &TaskId) -> CaptchaFuture {
+    ///
+    /// The solver's Jev calls belong to the task: record them on `usage`,
+    /// and reserve each against `budget` before asking
+    /// ([`TaskBudgetScope::try_reserve_model_call`]). The caller also stops
+    /// the call when the task's time runs out.
+    fn solve_captcha(
+        &self,
+        _task: &TaskId,
+        _usage: Arc<crate::UsageRecorder>,
+        _budget: TaskBudgetScope,
+    ) -> CaptchaFuture {
         Box::pin(async { crate::CaptchaOutcome::Unavailable })
     }
 

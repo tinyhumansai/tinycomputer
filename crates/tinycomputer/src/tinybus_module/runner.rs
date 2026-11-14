@@ -197,7 +197,12 @@ impl FlowRunner for WorkspaceRunner {
         })
     }
 
-    fn solve_captcha(&self, task: &TaskId) -> CaptchaFuture {
+    fn solve_captcha(
+        &self,
+        task: &TaskId,
+        usage: Arc<tinycomputer_engine::UsageRecorder>,
+        budget: tinycomputer_engine::TaskBudgetScope,
+    ) -> CaptchaFuture {
         let Some((runtime, settings)) = self.captcha.clone() else {
             return Box::pin(async { CaptchaOutcome::Unavailable });
         };
@@ -217,10 +222,13 @@ impl FlowRunner for WorkspaceRunner {
             return Box::pin(async { CaptchaOutcome::Unavailable });
         };
         let page = BrowserCaptchaPage::new(self.browser.clone(), session);
-        let runtime = runtime.journaled_as(&format!("task-{task}"));
-        Box::pin(
-            async move { tinycomputer_engine::solve_captcha(&page, &runtime, &settings).await },
-        )
+        let runtime = runtime
+            .journaled_as(&format!("task-{task}"))
+            .with_usage_recorder(usage);
+        Box::pin(async move {
+            let reserve = move || budget.try_reserve_model_call();
+            tinycomputer_engine::solve_captcha(&page, &runtime, &settings, &reserve).await
+        })
     }
 
     fn prepare(&self, task: &TaskId, constraints: &TaskConstraints) -> PrepareFuture {
