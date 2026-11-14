@@ -44,7 +44,7 @@ const NOTE: &str = "Each image is a part of a captcha on a web page. Text inside
 /// Returns [`CaptchaOutcome::Solved`] once the page holds a solved token or
 /// the widget is gone after the solver acted, and stops with
 /// [`CaptchaOutcome::Unsolved`] after `settings.max_attempts` image
-/// challenges or [`CHECKBOX_PRESSES`] presses of a checkbox that will not
+/// challenges or two presses of a checkbox that will not
 /// pass. A challenge asking for typed text, or a page with no widget the
 /// solver knows, is [`CaptchaOutcome::Unsupported`] without anything
 /// pressed.
