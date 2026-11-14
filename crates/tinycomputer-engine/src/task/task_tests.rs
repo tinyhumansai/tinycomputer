@@ -201,13 +201,13 @@ impl FlowRunner for Script {
         &self,
         _task: &TaskId,
         _usage: std::sync::Arc<crate::UsageRecorder>,
-        budget: super::TaskBudgetScope,
+        reserve: super::CaptchaReserve,
     ) -> super::CaptchaFuture {
         // The task's model-call budget is reachable from the solver's scope.
         self.captcha_reserved
             .lock()
             .unwrap()
-            .push(budget.try_reserve_model_call());
+            .push(reserve());
         self.captcha_calls
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let outcome = self

@@ -142,7 +142,7 @@ async fn the_runner_tries_a_captcha_only_with_a_solver_and_a_page() {
         crate::tinybus_module::runner::WorkspaceRunner::new(crate::Desktop::new(), None, browser);
     let task = TaskId::new("t-1");
     assert_eq!(
-        runner.solve_captcha(&task).await,
+        runner.solve_captcha(&task, Arc::default(), Arc::new(|| true)).await,
         CaptchaOutcome::Unavailable,
         "no captcha configuration"
     );
@@ -153,7 +153,7 @@ async fn the_runner_tries_a_captcha_only_with_a_solver_and_a_page() {
     ));
     let _ = runner.visible_text(&task).await;
     assert_eq!(
-        runner.solve_captcha(&task).await,
+        runner.solve_captcha(&task, Arc::default(), Arc::new(|| true)).await,
         CaptchaOutcome::Unavailable,
         "no browser session open"
     );

@@ -93,7 +93,9 @@ async fn solve(cell: &Arc<Cell>, runner: &dyn FlowRunner, task: &TaskId) -> Opti
         });
     };
     let scope = work.scope();
-    let solving = runner.solve_captcha(task, task_usage(cell), scope.clone());
+    let reserving = scope.clone();
+    let reserve: super::CaptchaReserve = Arc::new(move || reserving.try_reserve_model_call());
+    let solving = runner.solve_captcha(task, task_usage(cell), reserve);
     let outcome = match scope.remaining_ms() {
         Some(ms) => tokio::time::timeout(Duration::from_millis(ms), solving)
             .await
