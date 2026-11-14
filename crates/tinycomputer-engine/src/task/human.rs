@@ -7,7 +7,7 @@ use super::FlowRunner;
 use super::interpret::Resume;
 use super::store::{Cell, Run};
 use crate::CaptchaOutcome;
-use crate::tinycomputer_bus_flow::Flow;
+use tinycomputer_bus::Flow;
 
 /// A recoverable failure in front of something only a person can pass — a
 /// captcha, a one-time code, a login wall — becomes `needs_human`, and the
