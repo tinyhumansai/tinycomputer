@@ -101,6 +101,9 @@ log = "0.4"
 cpal = "0.18"
 # Unpredictable one-use handles bind host confirmation to a module-held action.
 getrandom = "0.4"
+# The captcha solver cuts and scales screenshots before Jev reads them. PNG
+# only; agent-browser already links the same crate.
+image = { version = "0.25", default-features = false, features = ["png"] }
 # Held browser outputs travel as base64 chunks with a SHA-256 digest. Same
 # versions agent-browser takes, so the lockfile holds one copy of each.
 base64 = "0.22"

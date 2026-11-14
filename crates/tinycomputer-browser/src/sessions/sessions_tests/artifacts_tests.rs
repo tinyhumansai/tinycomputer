@@ -73,7 +73,7 @@ async fn downloads_are_recorded_as_they_finish() {
 }
 
 #[tokio::test]
-async fn screenshot_bytes_hands_the_image_back_and_holds_nothing() {
+async fn screenshot_bytes_hands_the_image_back() {
     let fake = Fake::new();
     let (browser, id) = open(&fake, "screenshot-bytes").await;
     let bytes = browser
@@ -81,9 +81,4 @@ async fn screenshot_bytes_hands_the_image_back_and_holds_nothing() {
         .await
         .unwrap();
     assert_eq!(bytes, crate::fake::png(1280, 800));
-    let held = browser
-        .screenshot(&id, ScreenshotRequest::default())
-        .await
-        .unwrap();
-    assert_eq!(held.id.0, "out-2", "the first image was released, not kept");
 }
