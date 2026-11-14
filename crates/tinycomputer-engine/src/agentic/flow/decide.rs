@@ -364,6 +364,7 @@ pub(in crate::agentic::flow) fn fit(request: &mut EvaluationRequest, limit: usiz
             Question::Choice(choice) => &mut choice.instructions,
             Question::Noul(noul) => &mut noul.instructions,
             Question::Score(score) => &mut score.instructions,
+            Question::Box(found) => &mut found.instructions,
         };
         if let Value::Object(fields) = instructions
             && fields.contains_key("brief")

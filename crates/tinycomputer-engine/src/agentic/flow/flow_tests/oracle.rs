@@ -111,6 +111,7 @@ pub(super) fn text_of(question: &Question, field: &str) -> String {
         Question::Choice(choice) => &choice.instructions,
         Question::Score(score) => &score.instructions,
         Question::Noul(noul) => &noul.instructions,
+        Question::Box(found) => &found.instructions,
     };
     instructions
         .get(field)
