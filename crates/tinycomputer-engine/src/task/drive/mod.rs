@@ -11,4 +11,4 @@ mod plan;
 mod run;
 
 pub(super) use plan::{plan_payment_then_drive, plan_then_drive};
-pub(super) use run::drive;
+pub(super) use run::{MAX_SOLVED_WALLS, drive};

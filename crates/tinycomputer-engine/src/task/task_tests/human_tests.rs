@@ -219,7 +219,7 @@ async fn a_captcha_that_keeps_returning_goes_to_a_person_after_three_solves() {
         script
             .captcha_calls
             .load(std::sync::atomic::Ordering::SeqCst),
-        crate::task::drive::run::MAX_SOLVED_WALLS
+        crate::task::drive::MAX_SOLVED_WALLS
     );
     assert_eq!(script.requests.lock().unwrap().len(), 4);
 }
