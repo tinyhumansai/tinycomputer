@@ -210,7 +210,13 @@ async fn a_captcha_that_keeps_returning_goes_to_a_person_after_three_solves() {
             .unwrap()
             .push_back(crate::CaptchaOutcome::Solved { attempts: 1 });
     }
-    let view = start(&tasks, json!({"app": "browser", "steps": ["a", "b"]}), &[]);
+    // Each retry starts at the failed step, so the flow is long enough for
+    // every scripted failure to land on its second step.
+    let view = start(
+        &tasks,
+        json!({"app": "browser", "steps": ["a", "b", "c", "d", "e", "f"]}),
+        &[],
+    );
     assert!(matches!(
         settle(&tasks, &view.id).await.status,
         TaskStatus::NeedsHuman { .. }
