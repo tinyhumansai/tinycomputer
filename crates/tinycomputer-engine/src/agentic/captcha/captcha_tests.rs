@@ -17,6 +17,7 @@ use tinyinference_decisions::{
 use super::*;
 use crate::agentic::{Evaluator, JevRuntime};
 
+mod page_tests;
 mod pixels_tests;
 mod scan_tests;
 mod solve_tests;
