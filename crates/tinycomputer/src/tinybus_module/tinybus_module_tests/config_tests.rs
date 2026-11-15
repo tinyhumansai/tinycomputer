@@ -191,6 +191,33 @@ fn each_decision_model_is_selected_from_private_configuration() {
     }
 }
 
+#[tokio::test]
+async fn a_surplus_configuration_reaches_describe_over_a_real_bus() -> tinybus::Result<()> {
+    use crate::tinybus_module::setup;
+    use tinybus::Connection;
+    use tinybus::broker::Broker;
+    use tinybus::transport::memory::MemoryBus;
+    use tinycomputer_bus::agent::Capabilities;
+    use tinycomputer_bus::{JevProvider, names};
+
+    let bus = MemoryBus::new();
+    Broker::new().spawn(bus.clone());
+    let service = Connection::connect(bus.connect().await?).await?;
+    setup(
+        service.clone(),
+        json!({"jev": {"api_key": "k", "provider": "surplus"}}),
+    )
+    .await?;
+    let client = Connection::connect(bus.connect().await?).await?;
+    let proxy = client.proxy(names::INTERFACE, names::OBJECT_PATH, names::INTERFACE)?;
+
+    let described: Capabilities = proxy.call(names::methods::DESCRIBE, json!([])).await?;
+    let model = described.decision_model.expect("a configured model");
+    assert_eq!(model.provider, JevProvider::Surplus);
+    assert_eq!(model.model, "jev-1.14");
+    Ok(())
+}
+
 #[test]
 fn the_browser_configuration_is_read_or_refused() {
     use crate::tinybus_module::config::BrowserDefaults;
