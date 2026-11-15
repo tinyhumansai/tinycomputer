@@ -113,6 +113,7 @@ to it:
 | `tiny_humans_open_router` | Jev, Tiny Humans' authenticated OpenRouter proxy | `https://api.tinyhumans.ai/agent-integrations/openrouter/systemone` | `jev-latest` |
 | `open_jev` (alias `openjev`) | OpenJEV's Jev-compatible API | `https://api.openjev.sh/v1/systemone` | `openjev` |
 | `sage` | Levanto Sage, in place of Jev | `https://sage.levanto.ai/` | `levanto-sage` (fixed) |
+| `surplus` | Surplus Intelligence's decisions API (contract 3.3) | `https://api.surplusintelligence.ai/v1/decisions` | `jev-1.14` |
 
 `endpoint_url` overrides the provider's own route, but only to exactly that
 route; it is not a way to point a decision model at an arbitrary host.

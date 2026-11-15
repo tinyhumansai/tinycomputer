@@ -36,6 +36,10 @@ normalization, and versioned consistency-checked extraction for desktop and
 Agent responses. The Agent reply gains its own `version` field; this is separate
 from `ENVELOPE_VERSION`, which tracks the desktop response envelope.
 
+Contract 3.3 adds the `surplus` value to `JevProvider`. A 3.2 module rejects
+it as an unknown variant, so this is a minor bump: a 3.3 host binds only to a
+3.3 or newer module.
+
 ### The bind rule
 
 ```rust,ignore

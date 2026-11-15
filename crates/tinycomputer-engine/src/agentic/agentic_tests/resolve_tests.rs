@@ -110,7 +110,11 @@ fn a_surplus_request_builds_a_surplus_client_config() {
     request.provider = JevProvider::Surplus;
     let config = client_config(&request);
     assert_eq!(config.provider, Provider::Surplus);
-    assert!(config.box_support().answers_box() || config.endpoint_url().is_none());
+    // Surplus answers no Box natively: the client emulates it by default.
+    assert!(matches!(
+        config.box_support(),
+        tinyinference_decisions::BoxSupport::Emulated(_)
+    ));
     assert!(config.base_url.contains("surplusintelligence.ai"));
 }
 

@@ -86,7 +86,7 @@ A few things run alongside that column rather than inside it:
   step that says `open Mail` or `browse https://…` reaches the right surface.
 
 `JevRuntime` also has other decision models behind the same loops: OpenJEV
-(`provider: "open_jev"`) and Levanto Sage (`provider: "sage"`, or
+(`provider: "open_jev"`), Surplus Intelligence (`provider: "surplus"`) and Levanto Sage (`provider: "sage"`, or
 `JevRuntime::sage`), selected by the module's `jev` configuration. See
 [jev-runtime.md](jev-runtime.md) and [sage.md](sage.md).
 
