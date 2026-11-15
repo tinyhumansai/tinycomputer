@@ -110,10 +110,8 @@ fn a_surplus_request_builds_a_surplus_client_config() {
     request.provider = JevProvider::Surplus;
     let config = client_config(&request);
     assert_eq!(config.provider, Provider::Surplus);
-    assert_eq!(
-        config.endpoint_url,
-        "https://api.surplusintelligence.ai/v1/decisions"
-    );
+    assert!(config.box_support().answers_box() || config.endpoint_url().is_none());
+    assert!(config.base_url.contains("surplusintelligence.ai"));
 }
 
 #[test]

@@ -18,6 +18,9 @@ fn the_contract_binds_to_itself() {
 fn a_newer_minor_on_the_module_side_binds() {
     assert!(is_compatible((3, 3)));
     assert!(is_compatible((3, 97)));
+    // 3.3 accepts the `surplus` decision provider: a 3.3 host may configure
+    // it, which a 3.2 module refuses as an unknown variant.
+    assert!(!is_compatible((3, 2)));
     // 3.2 adds the optional `captcha` module configuration. A 3.1 module
     // rejects it as unknown, so a 3.2 host cannot bind to one.
     assert!(!is_compatible((3, 1)));
