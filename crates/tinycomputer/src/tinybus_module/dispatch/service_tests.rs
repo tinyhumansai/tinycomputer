@@ -103,6 +103,13 @@ fn a_captcha_section_brings_a_solver_on_an_image_reading_model() {
     let (runtime, settings) = super::captcha_solver(&config).expect("a solver");
     assert_eq!(runtime.configuration().model, "jev-2");
     assert_eq!(settings.max_attempts, 3);
+
+    // Surplus has no `jev-preview` alias: it answers as its own default.
+    let config: tinycomputer_bus::config::CaptchaConfig =
+        serde_json::from_value(json!({"jev": {"api_key": "k", "provider": "surplus"}}))
+            .expect("captcha config");
+    let (runtime, _) = super::captcha_solver(&config).expect("a solver");
+    assert_eq!(runtime.configuration().model, "jev-1.14");
 }
 
 #[test]

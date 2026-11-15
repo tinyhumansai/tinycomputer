@@ -158,8 +158,9 @@ impl std::fmt::Debug for JevConfig {
 to: `TypeSafe` (the default, `TypeSafe`'s own System One API), `OpenRouter`,
 or `TinyHumansOpenRouter` (Tiny Humans' authenticated OpenRouter proxy) for
 Jev; `OpenJev` (`open_jev`, OpenJEV's Jev-compatible API, model `openjev`);
-or `Sage` (Levanto Sage in place of Jev, with `JevConfig::fast`), both added
-in contract 2.8. `JevProvider::default_model` names the model each answers as
+`Surplus` (`surplus`, Surplus Intelligence's decisions API, model `jev-1.14`,
+added in contract 3.3); or `Sage` (Levanto Sage in place of Jev, with
+`JevConfig::fast`), `OpenJev` and `Sage` added in contract 2.8. `JevProvider::default_model` names the model each answers as
 when `model` is absent. `JevConfiguration` is the non-secret summary of a
 retained client (provider, model, endpoint override, Sage's `fast`) a caller
 can ask for without ever seeing the key back; `Describe` serves it as

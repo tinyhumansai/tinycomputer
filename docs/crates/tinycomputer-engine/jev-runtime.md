@@ -52,7 +52,7 @@ journal handle. The module clones it per call rather than rebuilding it.
 
 ### Providers
 
-Five providers are recognised, each with one approved endpoint that
+Six providers are recognised, each with one approved endpoint that
 `JevRuntime::configure` checks `endpoint_url` against before it will use it:
 
 | Provider | Wire name | Approved endpoint |
@@ -62,6 +62,7 @@ Five providers are recognised, each with one approved endpoint that
 | **`TinyHumansOpenRouter`**, Tiny Humans' authenticated OpenRouter proxy, the only one that takes an `sdk_name` | `tiny_humans_open_router` | `https://api.tinyhumans.ai/agent-integrations/openrouter/systemone` |
 | **`OpenJev`**, OpenJEV's public System One API | `open_jev` (or `openjev`) | `https://api.openjev.sh/v1/systemone` |
 | **`Sage`**, Levanto Sage in place of Jev | `sage` | `https://sage.levanto.ai/` (trailing slash optional) |
+| **`Surplus`**, Surplus Intelligence's decisions API (contract 3.3); Box questions are emulated client-side | `surplus` | `https://api.surplusintelligence.ai/v1/decisions` |
 
 Passing an `endpoint_url` that is not the provider's own approved route
 returns a `JEV_INVALID_CONFIG` error rather than silently sending credentials

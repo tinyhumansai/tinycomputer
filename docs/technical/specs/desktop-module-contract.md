@@ -373,3 +373,16 @@ endpoints directly.
   to a 3.2 or newer module.
 - Behaviour: [`captcha-solver.md`](captcha-solver.md).
 
+
+## Surplus decision provider (3.3)
+
+- `JevProvider` gains `surplus` (Surplus Intelligence's decisions API,
+  approved endpoint `https://api.surplusintelligence.ai/v1/decisions`, default
+  model `jev-1.14`: Surplus has no `jev-latest` or `jev-preview` alias). It is
+  accepted wherever a `JevConfig` is, including `ComputerConfig.captcha.jev`,
+  where an absent model resolves to `jev-1.14` rather than `jev-preview`.
+- It adds no member and changes no existing wire form, so it is a minor bump:
+  a 3.2 module rejects `surplus` as an unknown variant, so a 3.3 host binds
+  only to a 3.3 or newer module.
+- Surplus answers no Box question natively; `tinyinference-decisions`
+  emulates it client-side by default, so the captcha solver needs no change.

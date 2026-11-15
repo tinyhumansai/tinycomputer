@@ -12,6 +12,7 @@ fn runtime_configuration_covers_all_providers_and_rejects_empty_keys() {
         JevProvider::TinyHumansOpenRouter,
         JevProvider::OpenJev,
         JevProvider::Sage,
+        JevProvider::Surplus,
     ] {
         let mut request = JevConfig::new("key");
         request.provider = provider;
@@ -102,6 +103,22 @@ fn each_provider_selects_its_decision_model() {
 }
 
 #[test]
+fn a_surplus_request_builds_a_surplus_client_config() {
+    use tinyinference_decisions::Provider;
+
+    let mut request = JevConfig::new("key");
+    request.provider = JevProvider::Surplus;
+    let config = client_config(&request);
+    assert_eq!(config.provider, Provider::Surplus);
+    // Surplus answers no Box natively: the client emulates it by default.
+    assert!(matches!(
+        config.box_support(),
+        tinyinference_decisions::BoxSupport::Emulated(_)
+    ));
+    assert!(config.base_url.contains("surplusintelligence.ai"));
+}
+
+#[test]
 fn only_each_providers_own_endpoint_is_approved() {
     use crate::agentic::runtime::{approved_endpoint, trusted_endpoint};
 
@@ -111,6 +128,7 @@ fn only_each_providers_own_endpoint_is_approved() {
         JevProvider::TinyHumansOpenRouter,
         JevProvider::OpenJev,
         JevProvider::Sage,
+        JevProvider::Surplus,
     ];
     for provider in providers {
         let mut request = JevConfig::new("key");
@@ -132,6 +150,18 @@ fn only_each_providers_own_endpoint_is_approved() {
         approved_endpoint(JevProvider::OpenJev),
         "https://api.openjev.sh/v1/systemone"
     );
+    assert_eq!(
+        approved_endpoint(JevProvider::Surplus),
+        "https://api.surplusintelligence.ai/v1/decisions"
+    );
+    assert!(trusted_endpoint(
+        JevProvider::Surplus,
+        "https://api.surplusintelligence.ai/v1/decisions"
+    ));
+    assert!(!trusted_endpoint(
+        JevProvider::Surplus,
+        "https://api.surplusintelligence.ai/v1/decisions/"
+    ));
     assert!(trusted_endpoint(
         JevProvider::Sage,
         "https://sage.levanto.ai"

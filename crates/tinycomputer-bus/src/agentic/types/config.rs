@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 /// Jev-compatible API, answering as the `openjev` model; `sage` puts Levanto
 /// Sage behind the same loops in place of Jev. Each has exactly one approved
 /// endpoint, which [`JevConfig::endpoint_url`] may only repeat (contract 2.8
-/// added `open_jev` and `sage`).
+/// added `open_jev` and `sage`; 3.3 added `surplus`, Surplus Intelligence's
+/// decisions API).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum JevProvider {
@@ -27,18 +28,24 @@ pub enum JevProvider {
     /// Levanto Sage (`https://sage.levanto.ai/`), answering the loops' Jev
     /// questions as its own calibrated decisions; see [`JevConfig::fast`].
     Sage,
+    /// Surplus Intelligence's decisions API
+    /// (`https://api.surplusintelligence.ai/v1/decisions`), model `jev-1.14`
+    /// unless [`JevConfig::model`] names another (contract 3.3).
+    Surplus,
 }
 
 impl JevProvider {
     /// The model this provider answers as when [`JevConfig::model`] is
     /// absent: `jev-latest` for the Jev routes, `openjev` for `OpenJEV`, and
-    /// `levanto-sage` for Sage, which takes no model selection.
+    /// `levanto-sage` for Sage, which takes no model selection, and `jev-1.14`
+    /// for Surplus, which has no `jev-latest` alias.
     #[must_use]
     pub const fn default_model(self) -> &'static str {
         match self {
             Self::TypeSafe | Self::OpenRouter | Self::TinyHumansOpenRouter => "jev-latest",
             Self::OpenJev => "openjev",
             Self::Sage => "levanto-sage",
+            Self::Surplus => "jev-1.14",
         }
     }
 }

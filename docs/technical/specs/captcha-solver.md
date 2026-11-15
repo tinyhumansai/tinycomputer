@@ -1,6 +1,6 @@
 # Captcha solver
 
-**Status:** Implemented (contract 3.2). **Owner:** tinycomputer engine.
+**Status:** Implemented (contract 3.2; Surplus route 3.3). **Owner:** tinycomputer engine.
 
 ## Problem
 
@@ -39,6 +39,9 @@ Configuration (`ComputerConfig.captcha`, `tinycomputer_bus::config::CaptchaConfi
 
 `jev` is a Jev route of its own (any `JevConfig`; `model` defaults to
 `jev-preview`), so the main decision model may stay on a text-only route.
+The route may be Surplus Intelligence (`"provider": "surplus"`, contract
+3.3), whose `model` defaults to `jev-1.14` and whose Box questions
+`tinyinference-decisions` emulates client-side; the solver is unchanged.
 `max_attempts` (default 3, at most 10) bounds image challenges submitted per
 try. Without the section there is no solver and nothing changes.
 

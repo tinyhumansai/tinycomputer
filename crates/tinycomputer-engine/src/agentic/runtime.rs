@@ -409,6 +409,7 @@ pub(super) const fn approved_endpoint(provider: JevProvider) -> &'static str {
         }
         JevProvider::OpenJev => "https://api.openjev.sh/v1/systemone",
         JevProvider::Sage => "https://sage.levanto.ai/",
+        JevProvider::Surplus => "https://api.surplusintelligence.ai/v1/decisions",
     }
 }
 
@@ -432,6 +433,7 @@ pub(super) fn client_config(request: &JevConfig) -> ClientConfig {
         JevProvider::OpenRouter => ClientConfig::openrouter(request.api_key()),
         JevProvider::TinyHumansOpenRouter => ClientConfig::tinyhumans_openrouter(request.api_key()),
         // Sage has a client of its own; `configure` never asks for it here.
+        JevProvider::Surplus => ClientConfig::surplus(request.api_key()),
         JevProvider::OpenJev | JevProvider::Sage => ClientConfig::openjev(request.api_key()),
     };
     if let Some(endpoint) = &request.endpoint_url {

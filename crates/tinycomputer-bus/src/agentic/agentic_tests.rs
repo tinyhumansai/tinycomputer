@@ -51,6 +51,10 @@ fn decision_model_selection_round_trips_and_stays_additive() {
     );
     assert_eq!(JevProvider::OpenJev.default_model(), "openjev");
     assert_eq!(JevProvider::Sage.default_model(), "levanto-sage");
+    assert_eq!(JevProvider::Surplus.default_model(), "jev-1.14");
+    let surplus: JevConfig =
+        serde_json::from_value(json!({"api_key": "k", "provider": "surplus"})).unwrap();
+    assert_eq!(surplus.provider, JevProvider::Surplus);
 
     // The summary leaves `fast` out when false, so a 2.7 reader sees the
     // same object it always did.
@@ -96,6 +100,10 @@ fn every_agentic_enum_pins_its_wire_spelling() {
     assert_eq!(
         serde_json::to_value(JevProvider::Sage).unwrap(),
         json!("sage")
+    );
+    assert_eq!(
+        serde_json::to_value(JevProvider::Surplus).unwrap(),
+        json!("surplus")
     );
     for (operation, wire) in [
         (JevOperation::Click, "CLICK"),
