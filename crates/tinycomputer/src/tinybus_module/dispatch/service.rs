@@ -298,7 +298,7 @@ fn captcha_solver(
     {
         // Surplus has no `jev-preview` alias; its own default (`jev-1.14`)
         // already reads images.
-        let default = if route.provider == agentic::JevProvider::Surplus {
+        let default = if route.provider == tinycomputer_bus::JevProvider::Surplus {
             route.provider.default_model()
         } else {
             tinycomputer_bus::config::DEFAULT_CAPTCHA_MODEL
