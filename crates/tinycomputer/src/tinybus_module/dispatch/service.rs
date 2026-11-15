@@ -296,7 +296,14 @@ fn captcha_solver(
         .as_deref()
         .is_none_or(|model| model.trim().is_empty())
     {
-        route.model = Some(tinycomputer_bus::config::DEFAULT_CAPTCHA_MODEL.to_owned());
+        // Surplus has no `jev-preview` alias; its own default (`jev-1.14`)
+        // already reads images.
+        let default = if route.provider == agentic::JevProvider::Surplus {
+            route.provider.default_model()
+        } else {
+            tinycomputer_bus::config::DEFAULT_CAPTCHA_MODEL
+        };
+        route.model = Some(default.to_owned());
     }
     let runtime =
         agentic::JevRuntime::configure(&route).map_err(|_| crate::Error::ConfigFieldType {
