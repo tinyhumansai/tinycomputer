@@ -168,6 +168,11 @@ fn each_decision_model_is_selected_from_private_configuration() {
             JevProvider::Sage,
             "levanto-sage",
         ),
+        (
+            json!({"api_key": "k", "provider": "surplus"}),
+            JevProvider::Surplus,
+            "jev-1.14",
+        ),
     ] {
         let service = DesktopService::from_config(&json!({ "jev": jev })).unwrap();
         let configured = service.jev_runtime().unwrap().configuration().clone();
