@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 /// Jev-compatible API, answering as the `openjev` model; `sage` puts Levanto
 /// Sage behind the same loops in place of Jev. Each has exactly one approved
 /// endpoint, which [`JevConfig::endpoint_url`] may only repeat (contract 2.8
-/// added `open_jev` and `sage`).
+/// added `open_jev` and `sage`; 3.3 added `surplus`, Surplus Intelligence's
+/// decisions API).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum JevProvider {

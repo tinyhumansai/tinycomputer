@@ -1,6 +1,6 @@
 # Captcha solver
 
-**Status:** Implemented (contract 3.2). **Owner:** tinycomputer engine.
+**Status:** Implemented (contract 3.2; Surplus route 3.3). **Owner:** tinycomputer engine.
 
 ## Problem
 
