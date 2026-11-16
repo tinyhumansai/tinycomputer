@@ -14,7 +14,6 @@ fn domains(names: &[&str]) -> Vec<String> {
 fn target(address: &str) -> SocketAddr {
     address.parse().unwrap()
 }
-}
 
 #[test]
 fn a_domain_routes_itself_and_its_subdomains_only() {

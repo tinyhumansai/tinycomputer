@@ -352,7 +352,10 @@ async fn a_routed_destination_is_refused_when_the_host_denies_it_or_the_proxy() 
 #[tokio::test]
 async fn the_tunnel_is_pinned_to_an_approved_ipv4_address_before_ipv6() {
     let (_destination, destination_address) = untouched_destination();
-    let ipv6 = SocketAddr::from(([0x2001, 0xdb8, 0, 0, 0, 0, 0, 7], destination_address.port()));
+    let ipv6 = SocketAddr::from((
+        [0x2001, 0xdb8, 0, 0, 0, 0, 0, 7],
+        destination_address.port(),
+    ));
     let upstream = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let upstream_address = upstream.local_addr().unwrap();
     let authorizer = Arc::new(RoutingAuthorizer {
