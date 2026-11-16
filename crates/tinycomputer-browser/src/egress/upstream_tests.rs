@@ -23,10 +23,22 @@ fn target(hostname: &str, port: u16) -> BrowserDialTarget {
 #[test]
 fn a_domain_routes_itself_and_its_subdomains_only() {
     let proxy = UpstreamProxy::new(SECRET_URL, &domains(&["Reddit.com", ".redd.it."])).unwrap();
-    for routed in ["reddit.com", "www.reddit.com", "old.reddit.com.", "i.redd.it", "WWW.REDDIT.COM"] {
+    for routed in [
+        "reddit.com",
+        "www.reddit.com",
+        "old.reddit.com.",
+        "i.redd.it",
+        "WWW.REDDIT.COM",
+    ] {
         assert!(proxy.routes(routed), "{routed}");
     }
-    for direct in ["notreddit.com", "reddit.com.evil.test", "example.com", "it", "redd.it.test"] {
+    for direct in [
+        "notreddit.com",
+        "reddit.com.evil.test",
+        "example.com",
+        "it",
+        "redd.it.test",
+    ] {
         assert!(!proxy.routes(direct), "{direct}");
     }
 }
@@ -75,7 +87,13 @@ fn invalid_settings_are_refused_without_quoting_the_url() {
         assert!(!error.to_string().contains("hunter2"), "{url}: {error}");
         assert!(!format!("{error:?}").contains("hunter2"));
     }
-    for bad in [vec![], domains(&["*.reddit.com"]), domains(&[""]), domains(&["a..b"]), domains(&["reddit.com/x"])] {
+    for bad in [
+        vec![],
+        domains(&["*.reddit.com"]),
+        domains(&[""]),
+        domains(&["a..b"]),
+        domains(&["reddit.com/x"]),
+    ] {
         assert!(UpstreamProxy::new(SECRET_URL, &bad).is_err(), "{bad:?}");
     }
 }
@@ -120,8 +138,11 @@ async fn the_tunnel_asks_for_the_destination_with_the_proxy_credentials() {
             "CONNECT www.reddit.com:443 HTTP/1.1\r\nHost: www.reddit.com:443\r\nProxy-Authorization: Basic {expected}\r\n\r\n"
         )
     );
-    let (result, request) =
-        handshake(b"HTTP/1.0 200 OK\r\nVia: x\r\n\r\n", target("2001:db8::7", 80)).await;
+    let (result, request) = handshake(
+        b"HTTP/1.0 200 OK\r\nVia: x\r\n\r\n",
+        target("2001:db8::7", 80),
+    )
+    .await;
     result.unwrap();
     assert!(request.starts_with("CONNECT [2001:db8::7]:80 HTTP/1.1\r\n"));
 }
@@ -138,7 +159,11 @@ async fn a_refused_tunnel_names_only_the_status() {
     assert!(error.to_string().contains("407"));
     assert!(!error.to_string().contains("ss-word"));
 
-    let (result, _) = handshake(b"HTTP/1.1 502 Bad Gateway\r\n\r\n", target("reddit.com", 443)).await;
+    let (result, _) = handshake(
+        b"HTTP/1.1 502 Bad Gateway\r\n\r\n",
+        target("reddit.com", 443),
+    )
+    .await;
     let error = result.unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::ConnectionRefused);
     assert!(error.to_string().contains("502"));
@@ -152,7 +177,11 @@ async fn a_proxy_that_closes_or_floods_the_head_is_refused() {
     let proxy = UpstreamProxy::new(SECRET_URL, &domains(&["reddit.com"])).unwrap();
     let (mut ours, theirs) = tokio::io::duplex(64);
     drop(theirs);
-    assert!(open_tunnel(&mut ours, &proxy, &target("reddit.com", 443)).await.is_err());
+    assert!(
+        open_tunnel(&mut ours, &proxy, &target("reddit.com", 443))
+            .await
+            .is_err()
+    );
 
     let (mut ours, mut theirs) = tokio::io::duplex(1 << 16);
     tokio::spawn(async move {

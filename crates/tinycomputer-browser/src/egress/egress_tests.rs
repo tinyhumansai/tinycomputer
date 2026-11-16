@@ -14,6 +14,7 @@ mod lease_tests;
 mod lifecycle_tests;
 mod retry_tests;
 mod simulator;
+mod upstream_tests;
 mod websocket_tests;
 
 #[tokio::test]

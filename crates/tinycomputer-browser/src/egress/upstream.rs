@@ -138,7 +138,9 @@ impl UpstreamProxy {
 
 fn normalize_domains(domains: &[String]) -> Result<Vec<String>, UpstreamProxyError> {
     if domains.is_empty() {
-        return Err(UpstreamProxyError("upstream proxy needs at least one domain"));
+        return Err(UpstreamProxyError(
+            "upstream proxy needs at least one domain",
+        ));
     }
     domains
         .iter()
@@ -165,7 +167,8 @@ fn normalize_domains(domains: &[String]) -> Result<Vec<String>, UpstreamProxyErr
 }
 
 fn percent_decode(value: &str) -> Result<Vec<u8>, UpstreamProxyError> {
-    let invalid = UpstreamProxyError("upstream proxy url has malformed percent-encoded credentials");
+    let invalid =
+        UpstreamProxyError("upstream proxy url has malformed percent-encoded credentials");
     let bytes = value.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut index = 0;
@@ -259,11 +262,22 @@ async fn read_response_head<S: AsyncRead + Unpin>(stream: &mut S) -> io::Result<
 }
 
 fn response_status(head: &[u8]) -> io::Result<u16> {
-    let invalid = || io::Error::new(io::ErrorKind::InvalidData, "upstream proxy sent no HTTP status");
-    let line = head.split(|byte| *byte == b'\r').next().ok_or_else(invalid)?;
+    let invalid = || {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "upstream proxy sent no HTTP status",
+        )
+    };
+    let line = head
+        .split(|byte| *byte == b'\r')
+        .next()
+        .ok_or_else(invalid)?;
     let line = std::str::from_utf8(line).map_err(|_| invalid())?;
     let mut parts = line.split_ascii_whitespace();
-    if !parts.next().is_some_and(|version| version.starts_with("HTTP/1.")) {
+    if !parts
+        .next()
+        .is_some_and(|version| version.starts_with("HTTP/1."))
+    {
         return Err(invalid());
     }
     parts
@@ -301,7 +315,9 @@ impl EgressAuthorizer for RoutedLease {
     fn validate(&self, lease: String) -> Pin<Box<dyn Future<Output = io::Result<bool>> + Send>> {
         let inner = self.inner.clone();
         let destination = self.destination_lease.clone();
-        Box::pin(async move { Ok(inner.validate(destination).await? && inner.validate(lease).await?) })
+        Box::pin(
+            async move { Ok(inner.validate(destination).await? && inner.validate(lease).await?) },
+        )
     }
 }
 
