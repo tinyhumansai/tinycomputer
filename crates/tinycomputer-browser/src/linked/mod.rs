@@ -11,7 +11,7 @@
 //! by the session lock.
 
 use crate::{
-    egress::{EgressAuthorizer, EgressProxy},
+    egress::{EgressAuthorizer, EgressProxy, UpstreamProxy},
     engine::{Engine, Launcher, Reply},
 };
 use agent_browser::{DaemonState, StateOptions, execute_command};
@@ -39,6 +39,9 @@ pub struct EnforcedAgentBrowser {
 pub(crate) struct HostBrowser {
     pub(crate) executable: Option<String>,
     pub(crate) profile: Option<String>,
+    /// Destination domains the egress proxy reaches through an upstream
+    /// proxy, after the same destination authorization as any dial.
+    pub(crate) upstreams: Vec<UpstreamProxy>,
 }
 
 impl HostBrowser {
@@ -47,6 +50,7 @@ impl HostBrowser {
         Self {
             executable: Some(executable.to_owned()),
             profile: None,
+            upstreams: Vec::new(),
         }
     }
 }
@@ -83,6 +87,16 @@ impl EnforcedAgentBrowser {
     #[must_use]
     pub fn with_profile(mut self, profile: Option<String>) -> Self {
         self.host.profile = profile;
+        self
+    }
+
+    /// Route the destinations each [`UpstreamProxy`] covers through it. It
+    /// is host control, like the proxy itself: a browser call cannot name
+    /// one, and every routed dial is still authorized by the host callback
+    /// (see the egress module's README).
+    #[must_use]
+    pub fn with_upstream_proxies(mut self, upstreams: Vec<UpstreamProxy>) -> Self {
+        self.host.upstreams = upstreams;
         self
     }
 }
@@ -153,10 +167,11 @@ impl Engine for Linked {
                     return failure_reply(&command, "network policy has no host authorizer");
                 };
                 if self.proxy.is_none() {
-                    match EgressProxy::bind(
+                    match EgressProxy::bind_with_upstreams(
                         authorizer,
                         self.proxy_session_id.clone(),
                         self.proxy_password.clone(),
+                        self.host.upstreams.clone().into(),
                     )
                     .await
                     {
