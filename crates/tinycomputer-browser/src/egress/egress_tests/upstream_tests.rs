@@ -226,7 +226,7 @@ async fn a_plain_http_request_to_a_routed_host_also_goes_through_a_tunnel() {
     let (mut tunnel, _) = upstream.accept().await.unwrap();
     let head = read_head(&mut tunnel).await;
     assert!(
-        head.starts_with("CONNECT reddit.com:80 HTTP/1.1\r\n"),
+        head.starts_with(&format!("CONNECT {destination_address} HTTP/1.1\r\n")),
         "{head}"
     );
     tunnel
