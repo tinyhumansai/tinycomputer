@@ -6,7 +6,9 @@
 //! a desktop `user_agent` and launch `args` once here rather than on every
 //! request.
 
-use tinycomputer_browser::{CursorPace, Perception, ScreenCursor, SessionOptions, Settle};
+use tinycomputer_browser::{
+    CursorPace, Perception, ScreenCursor, SessionOptions, Settle, UpstreamProxy,
+};
 use tinycomputer_bus::config::{BrowserConfig, BrowserPerception, BrowserSettle};
 
 use crate::Result;
@@ -39,7 +41,14 @@ pub(crate) struct BrowserDefaults {
 pub(crate) struct BrowserEgressConfig {
     pub(crate) policy_id: String,
     pub(crate) generation: u64,
+    /// Destination domains the browser reaches through an upstream HTTP
+    /// proxy, still under the policy above. Host-private: the URLs carry
+    /// credentials.
+    pub(crate) upstream_proxies: Vec<UpstreamProxy>,
 }
+
+/// The most upstream proxies one egress scope may name.
+const MAX_UPSTREAM_PROXIES: usize = 16;
 
 impl std::fmt::Debug for BrowserEgressConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -114,10 +123,19 @@ impl BrowserDefaults {
             .and_then(serde_json::Value::as_u64)
             .filter(|generation| *generation > 0)
             .ok_or_else(invalid)?;
+        let upstream_proxies = match object.get("upstream_proxies") {
+            None => Vec::new(),
+            Some(value) => upstream_proxies(value)?,
+        };
+        let expected_keys = if object.contains_key("upstream_proxies") {
+            3
+        } else {
+            2
+        };
         // The host's own `executable` stays allowed: the enforced launcher
         // runs it with the proxy and resolver flags. Extra `args` could undo
         // them, so they are refused.
-        if object.len() != 2
+        if object.len() != expected_keys
             || browser
                 .as_object()
                 .is_some_and(|browser| browser.contains_key("args"))
@@ -127,6 +145,7 @@ impl BrowserDefaults {
         Ok(Some(BrowserEgressConfig {
             policy_id: policy_id.to_owned(),
             generation,
+            upstream_proxies,
         }))
     }
 
@@ -147,6 +166,41 @@ impl BrowserDefaults {
         }
         options
     }
+}
+
+/// Reads `browser.egress.upstream_proxies`: a list of
+/// `{"url": "http://user:pass@host:port", "domains": ["example.com"]}`. A
+/// refusal names the field, never the URL, which carries credentials.
+fn upstream_proxies(value: &serde_json::Value) -> Result<Vec<UpstreamProxy>> {
+    let invalid = || crate::Error::ConfigFieldType {
+        field: "browser.egress.upstream_proxies",
+        expected: "a list of objects with an http:// proxy `url` and its `domains`",
+    };
+    let entries = value.as_array().ok_or_else(invalid)?;
+    if entries.len() > MAX_UPSTREAM_PROXIES {
+        return Err(invalid());
+    }
+    entries
+        .iter()
+        .map(|entry| {
+            let entry = entry.as_object().filter(|entry| entry.len() == 2).ok_or_else(invalid)?;
+            let url = entry
+                .get("url")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(invalid)?;
+            let domains = entry
+                .get("domains")
+                .and_then(serde_json::Value::as_array)
+                .ok_or_else(invalid)?
+                .iter()
+                .map(|domain| domain.as_str().map(str::to_owned).ok_or_else(invalid))
+                .collect::<Result<Vec<_>>>()?;
+            UpstreamProxy::new(url, &domains).map_err(|error| {
+                log::warn!("browser egress upstream proxy refused: {error}");
+                invalid()
+            })
+        })
+        .collect()
 }
 
 /// Whether the host explicitly selected the trace/report callback.
