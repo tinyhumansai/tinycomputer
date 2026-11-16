@@ -1,6 +1,6 @@
 //! Upstream proxy routing through the module's real host boundary: the
 //! routes come from the module config (`browser.egress.upstream_proxies`),
-//! and every authorization, consume and lease check crosses TinyBus to the
+//! and every authorization, consume and lease check crosses `TinyBus` to the
 //! host's `BrowserEgressHost` callback through `BusAuthorizer`.
 
 use super::*;
@@ -29,6 +29,7 @@ struct RoutingHost {
 #[tinybus::interface(name = "ai.tinyhumans.tinycomputer.BrowserEgressHost")]
 impl RoutingHost {
     async fn authorize(&self, request: BrowserEgressTarget) -> tinybus::Result<BrowserEgressGrant> {
+        tokio::task::yield_now().await;
         self.seen.lock().unwrap().push(format!(
             "authorize:{}://{}:{}",
             request.scheme, request.hostname, request.port
@@ -49,6 +50,7 @@ impl RoutingHost {
         &self,
         request: BrowserEgressConsumeRequest,
     ) -> tinybus::Result<BrowserEgressDecision> {
+        tokio::task::yield_now().await;
         self.seen.lock().unwrap().push(format!(
             "consume:{}:{}",
             request.target.hostname, request.address
@@ -60,6 +62,7 @@ impl RoutingHost {
         &self,
         request: BrowserEgressValidateRequest,
     ) -> tinybus::Result<BrowserEgressDecision> {
+        tokio::task::yield_now().await;
         self.seen
             .lock()
             .unwrap()
