@@ -117,9 +117,8 @@ async fn routed_proxy(
 }
 
 async fn connect_through(proxy: &EgressProxy, authority: &str) -> TcpStream {
-    use base64::Engine as _;
-    let local = base64::engine::general_purpose::STANDARD
-        .encode(format!("tinycomputer:{LOCAL_PASSWORD}"));
+    // Basic base64 of `tinycomputer:` + LOCAL_PASSWORD.
+    let local = "dGlueWNvbXB1dGVyOmxvY2FsLXByb3h5LXBhc3N3b3Jk";
     let mut client = TcpStream::connect(proxy.url().replace("http://", ""))
         .await
         .unwrap();
@@ -162,7 +161,9 @@ async fn a_configured_route_is_authorized_by_the_host_for_destination_and_proxy(
     let (mut tunnel, _) = upstream.accept().await.unwrap();
     assert_eq!(
         read_head(&mut tunnel).await,
-        format!("CONNECT {REDDIT} HTTP/1.1\r\nHost: {REDDIT}\r\nProxy-Authorization: Basic cmVzaTpwYXNz\r\n\r\n")
+        format!(
+            "CONNECT {REDDIT} HTTP/1.1\r\nHost: {REDDIT}\r\nProxy-Authorization: Basic cmVzaTpwYXNz\r\n\r\n"
+        )
     );
     tunnel
         .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
