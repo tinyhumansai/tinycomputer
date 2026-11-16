@@ -172,9 +172,11 @@ async fn a_configured_route_is_authorized_by_the_host_for_destination_and_proxy(
         .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
         .await
         .unwrap();
-    let mut response = [0u8; 64];
-    let n = client.read(&mut response).await.unwrap();
-    assert!(String::from_utf8_lossy(&response[..n]).contains("200 Connection Established"));
+    let response = read_head(&mut client).await;
+    assert!(
+        response.starts_with("HTTP/1.1 200 Connection Established"),
+        "{response}"
+    );
     client.write_all(b"ping").await.unwrap();
     let mut payload = [0u8; 4];
     tunnel.read_exact(&mut payload).await.unwrap();

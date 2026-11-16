@@ -61,12 +61,10 @@ impl UpstreamProxy {
 
     fn parse(url: &str, domains: &[String]) -> Result<Self, Refusal> {
         let domains = normalize_domains(domains)?;
-        let parsed = url::Url::parse(url)
-            .map_err(|_| Refusal("upstream proxy url is not a valid URL"))?;
+        let parsed =
+            url::Url::parse(url).map_err(|_| Refusal("upstream proxy url is not a valid URL"))?;
         if parsed.scheme() != "http" {
-            return Err(Refusal(
-                "upstream proxy url must be an http:// proxy URL",
-            ));
+            return Err(Refusal("upstream proxy url must be an http:// proxy URL"));
         }
         if !matches!(parsed.path(), "" | "/")
             || parsed.query().is_some()
@@ -88,9 +86,7 @@ impl UpstreamProxy {
         let user = percent_decode(parsed.username())?;
         let password = percent_decode(parsed.password().unwrap_or_default())?;
         if user.contains(&b':') {
-            return Err(Refusal(
-                "upstream proxy user name must not contain ':'",
-            ));
+            return Err(Refusal("upstream proxy user name must not contain ':'"));
         }
         let authorization = (!user.is_empty() || !password.is_empty()).then(|| {
             let mut credentials = user;
@@ -135,9 +131,7 @@ impl UpstreamProxy {
 
 fn normalize_domains(domains: &[String]) -> Result<Vec<String>, Refusal> {
     if domains.is_empty() {
-        return Err(Refusal(
-            "upstream proxy needs at least one domain",
-        ));
+        return Err(Refusal("upstream proxy needs at least one domain"));
     }
     domains
         .iter()
@@ -164,8 +158,7 @@ fn normalize_domains(domains: &[String]) -> Result<Vec<String>, Refusal> {
 }
 
 fn percent_decode(value: &str) -> Result<Vec<u8>, Refusal> {
-    let invalid =
-        Refusal("upstream proxy url has malformed percent-encoded credentials");
+    let invalid = Refusal("upstream proxy url has malformed percent-encoded credentials");
     let bytes = value.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut index = 0;

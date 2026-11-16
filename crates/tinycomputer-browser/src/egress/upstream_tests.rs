@@ -79,6 +79,7 @@ fn invalid_settings_are_refused_without_quoting_the_url() {
         "not a url hunter2",
     ] {
         let error = UpstreamProxy::new(url, &routed).unwrap_err();
+        assert!(matches!(error, crate::Error::InvalidInput { .. }));
         assert!(!error.to_string().contains("hunter2"), "{url}: {error}");
         assert!(!format!("{error:?}").contains("hunter2"));
     }
