@@ -21,7 +21,7 @@ const PROXY_HOST: &str = "gate.proxy.test";
 /// validation, so a test can see which dials the host was asked for.
 #[derive(Default)]
 struct RoutingAuthorizer {
-    hosts: HashMap<String, SocketAddr>,
+    hosts: HashMap<String, Vec<SocketAddr>>,
     authorized: Mutex<Vec<String>>,
     consumed: Mutex<Vec<(String, SocketAddr)>>,
     validated: Mutex<Vec<String>>,
@@ -36,9 +36,9 @@ impl EgressAuthorizer for RoutingAuthorizer {
             "{}://{}:{}",
             target.scheme, target.hostname, target.port
         ));
-        let grant = self.hosts.get(&target.hostname).map(|address| DialGrant {
+        let grant = self.hosts.get(&target.hostname).map(|addresses| DialGrant {
             lease: format!("lease-{}", target.hostname),
-            addresses: vec![*address],
+            addresses: addresses.clone(),
         });
         Box::pin(async move {
             grant.ok_or_else(|| io::Error::new(io::ErrorKind::PermissionDenied, "denied"))
@@ -146,8 +146,8 @@ async fn a_routed_connect_tunnels_through_the_upstream_proxy_with_its_credential
     let upstream_address = upstream.local_addr().unwrap();
     let authorizer = Arc::new(RoutingAuthorizer {
         hosts: HashMap::from([
-            ("www.reddit.com".to_owned(), destination_address),
-            (PROXY_HOST.to_owned(), upstream_address),
+            ("www.reddit.com".to_owned(), vec![destination_address]),
+            (PROXY_HOST.to_owned(), vec![upstream_address]),
         ]),
         ..RoutingAuthorizer::default()
     });
@@ -159,7 +159,7 @@ async fn a_routed_connect_tunnels_through_the_upstream_proxy_with_its_credential
     assert_eq!(
         head,
         format!(
-            "CONNECT www.reddit.com:443 HTTP/1.1\r\nHost: www.reddit.com:443\r\nProxy-Authorization: {}\r\n\r\n",
+            "CONNECT {destination_address} HTTP/1.1\r\nHost: {destination_address}\r\nProxy-Authorization: {}\r\n\r\n",
             expected_proxy_authorization()
         )
     );
@@ -208,8 +208,8 @@ async fn a_plain_http_request_to_a_routed_host_also_goes_through_a_tunnel() {
     let upstream_address = upstream.local_addr().unwrap();
     let authorizer = Arc::new(RoutingAuthorizer {
         hosts: HashMap::from([
-            ("reddit.com".to_owned(), destination_address),
-            (PROXY_HOST.to_owned(), upstream_address),
+            ("reddit.com".to_owned(), vec![destination_address]),
+            (PROXY_HOST.to_owned(), vec![upstream_address]),
         ]),
         ..RoutingAuthorizer::default()
     });
@@ -260,8 +260,8 @@ async fn a_host_outside_the_routed_domains_is_dialed_directly() {
     let (upstream, upstream_address) = untouched_destination();
     let authorizer = Arc::new(RoutingAuthorizer {
         hosts: HashMap::from([
-            ("example.test".to_owned(), destination_address),
-            (PROXY_HOST.to_owned(), upstream_address),
+            ("example.test".to_owned(), vec![destination_address]),
+            (PROXY_HOST.to_owned(), vec![upstream_address]),
         ]),
         ..RoutingAuthorizer::default()
     });
@@ -294,8 +294,8 @@ async fn rejected_proxy_credentials_answer_bad_gateway() {
     let upstream_address = upstream.local_addr().unwrap();
     let authorizer = Arc::new(RoutingAuthorizer {
         hosts: HashMap::from([
-            ("reddit.com".to_owned(), destination_address),
-            (PROXY_HOST.to_owned(), upstream_address),
+            ("reddit.com".to_owned(), vec![destination_address]),
+            (PROXY_HOST.to_owned(), vec![upstream_address]),
         ]),
         ..RoutingAuthorizer::default()
     });
@@ -326,12 +326,12 @@ async fn a_routed_destination_is_refused_when_the_host_denies_it_or_the_proxy() 
     let (_destination, destination_address) = untouched_destination();
     // The destination is denied: the upstream proxy is never asked for.
     let denies_destination = Arc::new(RoutingAuthorizer {
-        hosts: HashMap::from([(PROXY_HOST.to_owned(), upstream_address)]),
+        hosts: HashMap::from([(PROXY_HOST.to_owned(), vec![upstream_address])]),
         ..RoutingAuthorizer::default()
     });
     // The proxy's own dial is denied: nothing is consumed or dialed.
     let denies_proxy = Arc::new(RoutingAuthorizer {
-        hosts: HashMap::from([("reddit.com".to_owned(), destination_address)]),
+        hosts: HashMap::from([("reddit.com".to_owned(), vec![destination_address])]),
         ..RoutingAuthorizer::default()
     });
     for (authorizer, authorizations) in [(denies_destination, 1), (denies_proxy, 2)] {
@@ -346,5 +346,33 @@ async fn a_routed_destination_is_refused_when_the_host_denies_it_or_the_proxy() 
     assert_eq!(
         upstream.accept().unwrap_err().kind(),
         io::ErrorKind::WouldBlock
+    );
+}
+
+#[tokio::test]
+async fn the_tunnel_is_pinned_to_an_approved_ipv4_address_before_ipv6() {
+    let (_destination, destination_address) = untouched_destination();
+    let ipv6 = SocketAddr::from(([0x2001, 0xdb8, 0, 0, 0, 0, 0, 7], destination_address.port()));
+    let upstream = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream_address = upstream.local_addr().unwrap();
+    let authorizer = Arc::new(RoutingAuthorizer {
+        hosts: HashMap::from([
+            ("reddit.com".to_owned(), vec![ipv6, destination_address]),
+            (PROXY_HOST.to_owned(), vec![upstream_address]),
+        ]),
+        ..RoutingAuthorizer::default()
+    });
+    let proxy = bind(authorizer.clone(), upstream_proxy(upstream_address.port())).await;
+
+    let _client = send(&proxy, &connect_request("reddit.com:443")).await;
+    let (mut tunnel, _) = upstream.accept().await.unwrap();
+    let head = read_head(&mut tunnel).await;
+    assert!(
+        head.starts_with(&format!("CONNECT {destination_address} HTTP/1.1\r\n")),
+        "{head}"
+    );
+    assert_eq!(
+        authorizer.consumed.lock().unwrap()[0],
+        ("reddit.com".to_owned(), destination_address)
     );
 }

@@ -11,13 +11,9 @@ fn domains(names: &[&str]) -> Vec<String> {
     names.iter().map(|name| (*name).to_owned()).collect()
 }
 
-fn target(hostname: &str, port: u16) -> BrowserDialTarget {
-    BrowserDialTarget {
-        scheme: "https".into(),
-        hostname: hostname.into(),
-        port,
-        session_id: "upstream-session".into(),
-    }
+fn target(address: &str) -> SocketAddr {
+    address.parse().unwrap()
+}
 }
 
 #[test]
@@ -98,7 +94,7 @@ fn invalid_settings_are_refused_without_quoting_the_url() {
     }
 }
 
-async fn handshake(reply: &'static [u8], target: BrowserDialTarget) -> (io::Result<()>, String) {
+async fn handshake(reply: &'static [u8], target: SocketAddr) -> (io::Result<()>, String) {
     let proxy = UpstreamProxy::new(SECRET_URL, &domains(&["reddit.com"])).unwrap();
     let (mut ours, mut theirs) = tokio::io::duplex(4096);
     let server = tokio::spawn(async move {
@@ -113,7 +109,7 @@ async fn handshake(reply: &'static [u8], target: BrowserDialTarget) -> (io::Resu
         theirs.write_all(b"after").await.unwrap();
         (String::from_utf8(seen).unwrap(), theirs)
     });
-    let result = open_tunnel(&mut ours, &proxy, &target).await;
+    let result = open_tunnel(&mut ours, &proxy, target).await;
     let (request, _theirs) = server.await.unwrap();
     if result.is_ok() {
         let mut after = [0u8; 5];
@@ -124,10 +120,10 @@ async fn handshake(reply: &'static [u8], target: BrowserDialTarget) -> (io::Resu
 }
 
 #[tokio::test]
-async fn the_tunnel_asks_for_the_destination_with_the_proxy_credentials() {
+async fn the_tunnel_asks_for_the_approved_address_with_the_proxy_credentials() {
     let (result, request) = handshake(
         b"HTTP/1.1 200 Connection established\r\n\r\n",
-        target("www.reddit.com", 443),
+        target("151.101.1.140:443"),
     )
     .await;
     result.unwrap();
@@ -135,12 +131,12 @@ async fn the_tunnel_asks_for_the_destination_with_the_proxy_credentials() {
     assert_eq!(
         request,
         format!(
-            "CONNECT www.reddit.com:443 HTTP/1.1\r\nHost: www.reddit.com:443\r\nProxy-Authorization: Basic {expected}\r\n\r\n"
+            "CONNECT 151.101.1.140:443 HTTP/1.1\r\nHost: 151.101.1.140:443\r\nProxy-Authorization: Basic {expected}\r\n\r\n"
         )
     );
     let (result, request) = handshake(
         b"HTTP/1.0 200 OK\r\nVia: x\r\n\r\n",
-        target("2001:db8::7", 80),
+        target("[2001:db8::7]:80"),
     )
     .await;
     result.unwrap();
@@ -151,7 +147,7 @@ async fn the_tunnel_asks_for_the_destination_with_the_proxy_credentials() {
 async fn a_refused_tunnel_names_only_the_status() {
     let (result, _) = handshake(
         b"HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic\r\n\r\n",
-        target("reddit.com", 443),
+        target("151.101.1.140:443"),
     )
     .await;
     let error = result.unwrap_err();
@@ -161,14 +157,14 @@ async fn a_refused_tunnel_names_only_the_status() {
 
     let (result, _) = handshake(
         b"HTTP/1.1 502 Bad Gateway\r\n\r\n",
-        target("reddit.com", 443),
+        target("151.101.1.140:443"),
     )
     .await;
     let error = result.unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::ConnectionRefused);
     assert!(error.to_string().contains("502"));
 
-    let (result, _) = handshake(b"SSH-2.0-nope\r\n\r\n", target("reddit.com", 443)).await;
+    let (result, _) = handshake(b"SSH-2.0-nope\r\n\r\n", target("151.101.1.140:443")).await;
     assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidData);
 }
 
@@ -178,7 +174,7 @@ async fn a_proxy_that_closes_or_floods_the_head_is_refused() {
     let (mut ours, theirs) = tokio::io::duplex(64);
     drop(theirs);
     assert!(
-        open_tunnel(&mut ours, &proxy, &target("reddit.com", 443))
+        open_tunnel(&mut ours, &proxy, target("151.101.1.140:443"))
             .await
             .is_err()
     );
@@ -190,7 +186,7 @@ async fn a_proxy_that_closes_or_floods_the_head_is_refused() {
         let _ = theirs.write_all(&vec![b'a'; MAX_RESPONSE_HEAD + 16]).await;
         tokio::time::sleep(Duration::from_secs(1)).await;
     });
-    let error = open_tunnel(&mut ours, &proxy, &target("reddit.com", 443))
+    let error = open_tunnel(&mut ours, &proxy, target("151.101.1.140:443"))
         .await
         .unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::InvalidData);
@@ -200,7 +196,7 @@ async fn a_proxy_that_closes_or_floods_the_head_is_refused() {
 async fn a_silent_proxy_times_out() {
     let proxy = UpstreamProxy::new(SECRET_URL, &domains(&["reddit.com"])).unwrap();
     let (mut ours, _theirs) = tokio::io::duplex(4096);
-    let error = open_tunnel(&mut ours, &proxy, &target("reddit.com", 443))
+    let error = open_tunnel(&mut ours, &proxy, target("151.101.1.140:443"))
         .await
         .unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::TimedOut);
