@@ -42,6 +42,11 @@ contents remain opaque to the proxy and require TinySecurity's explicit
 [`configuration.md`](../../docs/crates/tinycomputer/configuration.md#browser)
 for the host contract and its privacy behavior.
 
+A host may also name upstream HTTP proxies for some destination domains
+(`EnforcedAgentBrowser::with_upstream_proxies`, from the module's
+`browser.egress.upstream_proxies`). Those destinations are still authorized
+first, and the upstream proxy's own dial goes through the same host grant.
+
 The proxy internals and request-framing constraints are described in
 [`src/egress/README.md`](src/egress/README.md).
 
