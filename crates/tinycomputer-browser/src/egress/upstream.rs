@@ -194,8 +194,9 @@ fn percent_decode(value: &str) -> Result<Vec<u8>, UpstreamProxyError> {
     Ok(decoded)
 }
 
-/// Ask the upstream proxy on `stream` for a tunnel to `target`. On success
-/// the stream carries bytes to and from the destination, exactly as a direct
+/// Ask the upstream proxy on `stream` for a tunnel to `destination`, an
+/// address the host approved, so the proxy resolves nothing. On success the
+/// stream carries bytes to and from the destination, exactly as a direct
 /// socket to it would.
 ///
 /// # Errors
@@ -206,16 +207,13 @@ fn percent_decode(value: &str) -> Result<Vec<u8>, UpstreamProxyError> {
 pub(super) async fn open_tunnel<S>(
     stream: &mut S,
     proxy: &UpstreamProxy,
-    target: &BrowserDialTarget,
+    destination: SocketAddr,
 ) -> io::Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let authority = if target.hostname.contains(':') {
-        format!("[{}]:{}", target.hostname, target.port)
-    } else {
-        format!("{}:{}", target.hostname, target.port)
-    };
+    // `SocketAddr` displays an IPv6 address in brackets, as an authority.
+    let authority = destination.to_string();
     let mut request = format!("CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n");
     if let Some(authorization) = &proxy.authorization {
         request.push_str("Proxy-Authorization: ");

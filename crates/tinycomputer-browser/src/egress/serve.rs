@@ -176,8 +176,9 @@ enum Routed {
 
 /// Reach an authorized destination through its upstream proxy. The
 /// destination grant was issued by the host's policy check; it is spent here
-/// for this connection, and the only socket opened is to an address the host
-/// granted for the upstream proxy itself.
+/// for this connection on the one approved address the tunnel is pinned to,
+/// and the only socket opened locally is to an address the host granted for
+/// the upstream proxy itself.
 async fn connect_through_upstream<C, F>(
     auth: &Arc<dyn EgressAuthorizer>,
     target: &BrowserDialTarget,
@@ -194,7 +195,18 @@ where
         log::warn!("browser upstream proxy dial was not authorized by the host");
         return Routed::Refused;
     };
-    let Some(destination_address) = destination_grant.addresses.first().copied() else {
+    // The tunnel is pinned to one address the host approved for the
+    // destination, so the upstream proxy never resolves the name itself (it
+    // could resolve it elsewhere: split DNS, rebinding). IPv4 first, since
+    // many residential exits have no IPv6. The browser's own `Host` header
+    // and TLS SNI travel inside the tunnel unchanged.
+    let Some(destination_address) = destination_grant
+        .addresses
+        .iter()
+        .find(|address| address.is_ipv4())
+        .or_else(|| destination_grant.addresses.first())
+        .copied()
+    else {
         return Routed::Refused;
     };
     let destination_lease = destination_grant.lease.clone();
@@ -214,7 +226,7 @@ where
         log::warn!("browser upstream proxy could not be reached");
         return Routed::Refused;
     };
-    if let Err(error) = open_tunnel(&mut upstream, proxy, target).await {
+    if let Err(error) = open_tunnel(&mut upstream, proxy, destination_address).await {
         log::warn!("browser upstream proxy did not open a tunnel: {error}");
         return Routed::Gateway;
     }
