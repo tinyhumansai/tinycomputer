@@ -14,6 +14,9 @@ use tokio::{
 mod forward;
 mod request;
 mod serve;
+mod upstream;
+
+pub use upstream::UpstreamProxy;
 
 #[cfg(test)]
 pub(crate) use serve::connect_approved_addresses;
@@ -95,6 +98,26 @@ impl EgressProxy {
         session_id: String,
         proxy_password: String,
     ) -> io::Result<Self> {
+        Self::bind_with_upstreams(authorizer, session_id, proxy_password, Arc::from([])).await
+    }
+
+    /// Bind like [`EgressProxy::bind`], routing each destination an
+    /// [`UpstreamProxy`] covers through that proxy. The destination is
+    /// authorized exactly as for a direct dial; the upstream proxy's own
+    /// address is then authorized, consumed and dialed through the same
+    /// `authorizer`, and the connection stays open only while both leases
+    /// validate.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error when the listener cannot bind or its address cannot
+    /// be read.
+    pub async fn bind_with_upstreams(
+        authorizer: Arc<dyn EgressAuthorizer>,
+        session_id: String,
+        proxy_password: String,
+        upstreams: Arc<[UpstreamProxy]>,
+    ) -> io::Result<Self> {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
         let address = listener.local_addr()?;
         let task = tokio::spawn(async move {
@@ -106,8 +129,9 @@ impl EgressProxy {
                         let auth = authorizer.clone();
                         let session = session_id.clone();
                         let password = proxy_password.clone();
+                        let routes = upstreams.clone();
                         connections.spawn(async move {
-                            let _ = Box::pin(serve::serve(stream, auth, session, password)).await;
+                            let _ = Box::pin(serve::serve(stream, auth, session, password, routes)).await;
                         });
                     }
                     _ = connections.join_next(), if !connections.is_empty() => {}

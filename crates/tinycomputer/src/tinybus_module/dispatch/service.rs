@@ -133,7 +133,8 @@ impl DesktopService {
                     egress.generation,
                 )))
                 .with_executable(host.executable)
-                .with_profile(host.profile),
+                .with_profile(host.profile)
+                .with_upstream_proxies(egress.upstream_proxies.clone()),
             )))
         } else {
             Arc::new(Browser::new(Arc::new(AgentBrowser)))

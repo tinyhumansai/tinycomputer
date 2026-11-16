@@ -141,6 +141,7 @@ fn a_request_cannot_name_an_executable_the_host_did_not_configure() {
                 &HostBrowser {
                     executable: host.map(str::to_owned),
                     profile: None,
+                    upstreams: Vec::new(),
                 },
             )
             .is_err(),
@@ -164,6 +165,7 @@ fn host_profile() -> HostBrowser {
     HostBrowser {
         executable: Some("/opt/host/chrome".into()),
         profile: Some("/srv/state/browser/profile".into()),
+        upstreams: Vec::new(),
     }
 }
 

@@ -228,6 +228,7 @@ configuration validates.
 | `planner` | object | `api_key`, `provider` (`open_router` or `tiny_humans`), approved `endpoint_url`, `sdk_name`, and optional `model` for the planner, optional `rescue_route` giving the rescuer its own route and key, optional `rescue_model` for rescuing failed steps (`docs/technical/specs/task-rescue.md`), and optional `output_model` for shaping a finished task's answer (`docs/technical/specs/task-output.md`); absent means no planner, no rescues, and no output shapes |
 | `browser.executable` | string | the Chrome or Chromium binary to launch, when discovery would not find one |
 | `browser.profile` | string | the profile folder kept between sessions; under egress the only profile a launch may name, and it launches with extensions off |
+| `browser.egress.upstream_proxies` | array | host-private `{url, domains}` entries: destinations under `domains` are still authorized, then tunnelled through that `http://` upstream proxy, whose own dial the host also authorizes ([`configuration.md`](../crates/tinycomputer/configuration.md#browser)) |
 | `cursor` | string or object | the agent's on-screen cursor for desktop and browser: a pace (`off`, `brisk`, `natural` (default), `calm`) or `{pace, overlay}` with the overlay helper's path ([spec](specs/virtual-cursor.md)) |
 
 Without `jev`, `ResolveIntent`, `RunGoal`, `RunFlow`, and task runs answer
