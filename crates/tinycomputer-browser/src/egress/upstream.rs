@@ -3,8 +3,9 @@
 //! Some sites refuse a datacenter address outright. A host can name an
 //! upstream proxy (a residential or mobile exit, say) for a list of domains;
 //! a browser request to one of them still passes the full destination
-//! authorization, and then reaches the destination through a `CONNECT`
-//! tunnel on the upstream proxy instead of a direct dial. The upstream
+//! authorization, and then reaches one of the destination's approved
+//! addresses through a `CONNECT` tunnel on the upstream proxy instead of a
+//! direct dial. The upstream
 //! proxy's own address is authorized, granted and consumed through the same
 //! host callback as any other dial, so this adds no unchecked socket and no
 //! local name resolution.
