@@ -16,10 +16,7 @@
 use std::{fmt, future::Future, io, net::SocketAddr, pin::Pin, sync::Arc, time::Duration};
 
 use base64::Engine as _;
-use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    net::TcpStream,
-};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use super::{BrowserDialTarget, DialGrant, EgressAuthorizer};
 
