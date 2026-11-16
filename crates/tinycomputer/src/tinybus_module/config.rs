@@ -198,9 +198,12 @@ fn upstream_proxies(value: &serde_json::Value) -> Result<Vec<UpstreamProxy>> {
                 .iter()
                 .map(|domain| domain.as_str().map(str::to_owned).ok_or_else(invalid))
                 .collect::<Result<Vec<_>>>()?;
-            UpstreamProxy::new(url, &domains).map_err(|error| crate::Error::ConfigFieldType {
+            // The browser crate's message never quotes the URL either; this
+            // one names the field and the accepted shape.
+            UpstreamProxy::new(url, &domains).map_err(|_| crate::Error::ConfigFieldType {
                 field: "browser.egress.upstream_proxies",
-                expected: error.reason(),
+                expected: "an http:// proxy `url` naming only credentials, a host and a port, \
+                           and `domains` that are DNS names such as example.com",
             })
         })
         .collect()

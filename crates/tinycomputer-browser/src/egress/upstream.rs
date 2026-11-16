@@ -5,8 +5,7 @@
 //! a browser request to one of them still passes the full destination
 //! authorization, and then reaches one of the destination's approved
 //! addresses through a `CONNECT` tunnel on the upstream proxy instead of a
-//! direct dial. The upstream
-//! proxy's own address is authorized, granted and consumed through the same
+//! direct dial. The upstream proxy's own address is authorized, granted and consumed through the same
 //! host callback as any other dial, so this adds no unchecked socket and no
 //! local name resolution.
 //!
@@ -41,26 +40,10 @@ impl fmt::Debug for UpstreamProxy {
     }
 }
 
-/// Why an upstream proxy setting was refused. The message never repeats the
-/// URL, since it may carry credentials.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct UpstreamProxyError(&'static str);
-
-impl fmt::Display for UpstreamProxyError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.0)
-    }
-}
-
-impl std::error::Error for UpstreamProxyError {}
-
-impl UpstreamProxyError {
-    /// What was wrong, as a static message that never quotes the URL.
-    #[must_use]
-    pub fn reason(&self) -> &'static str {
-        self.0
-    }
-}
+/// Why an upstream proxy setting was refused: a static message that never
+/// repeats the URL, since it may carry credentials.
+#[derive(Debug, Clone, Copy)]
+struct Refusal(&'static str);
 
 impl UpstreamProxy {
     /// Route `domains` (each matching itself and every subdomain) through the
@@ -69,14 +52,19 @@ impl UpstreamProxy {
     ///
     /// # Errors
     ///
-    /// Returns an error, which never quotes the URL, when the URL is not a
-    /// plain `http` proxy URL or a domain is not a DNS name.
-    pub fn new(url: &str, domains: &[String]) -> Result<Self, UpstreamProxyError> {
+    /// Returns [`crate::Error::InvalidInput`], whose message never quotes the
+    /// URL, when the URL is not a plain `http` proxy URL or a domain is not a
+    /// DNS name.
+    pub fn new(url: &str, domains: &[String]) -> crate::Result<Self> {
+        Self::parse(url, domains).map_err(|Refusal(reason)| crate::Error::invalid_input(reason))
+    }
+
+    fn parse(url: &str, domains: &[String]) -> Result<Self, Refusal> {
         let domains = normalize_domains(domains)?;
         let parsed = url::Url::parse(url)
-            .map_err(|_| UpstreamProxyError("upstream proxy url is not a valid URL"))?;
+            .map_err(|_| Refusal("upstream proxy url is not a valid URL"))?;
         if parsed.scheme() != "http" {
-            return Err(UpstreamProxyError(
+            return Err(Refusal(
                 "upstream proxy url must be an http:// proxy URL",
             ));
         }
@@ -84,7 +72,7 @@ impl UpstreamProxy {
             || parsed.query().is_some()
             || parsed.fragment().is_some()
         {
-            return Err(UpstreamProxyError(
+            return Err(Refusal(
                 "upstream proxy url must name only credentials, a host and a port",
             ));
         }
@@ -92,15 +80,15 @@ impl UpstreamProxy {
             Some(url::Host::Domain(domain)) => domain.to_ascii_lowercase(),
             Some(url::Host::Ipv4(ip)) => ip.to_string(),
             Some(url::Host::Ipv6(ip)) => ip.to_string(),
-            None => return Err(UpstreamProxyError("upstream proxy url has no host")),
+            None => return Err(Refusal("upstream proxy url has no host")),
         };
         let port = parsed
             .port_or_known_default()
-            .ok_or(UpstreamProxyError("upstream proxy url has no port"))?;
+            .ok_or(Refusal("upstream proxy url has no port"))?;
         let user = percent_decode(parsed.username())?;
         let password = percent_decode(parsed.password().unwrap_or_default())?;
         if user.contains(&b':') {
-            return Err(UpstreamProxyError(
+            return Err(Refusal(
                 "upstream proxy user name must not contain ':'",
             ));
         }
@@ -145,9 +133,9 @@ impl UpstreamProxy {
     }
 }
 
-fn normalize_domains(domains: &[String]) -> Result<Vec<String>, UpstreamProxyError> {
+fn normalize_domains(domains: &[String]) -> Result<Vec<String>, Refusal> {
     if domains.is_empty() {
-        return Err(UpstreamProxyError(
+        return Err(Refusal(
             "upstream proxy needs at least one domain",
         ));
     }
@@ -167,7 +155,7 @@ fn normalize_domains(domains: &[String]) -> Result<Vec<String>, UpstreamProxyErr
             if valid {
                 Ok(domain)
             } else {
-                Err(UpstreamProxyError(
+                Err(Refusal(
                     "upstream proxy domain must be a DNS name such as example.com",
                 ))
             }
@@ -175,9 +163,9 @@ fn normalize_domains(domains: &[String]) -> Result<Vec<String>, UpstreamProxyErr
         .collect()
 }
 
-fn percent_decode(value: &str) -> Result<Vec<u8>, UpstreamProxyError> {
+fn percent_decode(value: &str) -> Result<Vec<u8>, Refusal> {
     let invalid =
-        UpstreamProxyError("upstream proxy url has malformed percent-encoded credentials");
+        Refusal("upstream proxy url has malformed percent-encoded credentials");
     let bytes = value.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut index = 0;

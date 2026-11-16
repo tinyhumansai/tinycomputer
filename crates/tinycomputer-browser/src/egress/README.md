@@ -54,7 +54,8 @@ policy:
 3. The proxy is asked for `CONNECT <approved address>` with the configured
    `Proxy-Authorization: Basic` credentials. The browser's `Host` header and
    TLS SNI travel inside the tunnel unchanged. Plain `http` and WebSocket
-   requests to a routed host travel the same kind of tunnel, with the usual
+   requests to a routed host travel the same kind of tunnel (to the URL's
+   port, 80 when it names none), with the usual
    origin-form request written into it, so no request reaches a routed host
    other than through a tunnel.
 4. Every lease check validates both the destination lease and the proxy

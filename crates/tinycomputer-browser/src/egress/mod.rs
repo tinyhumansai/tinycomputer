@@ -16,7 +16,7 @@ mod request;
 mod serve;
 mod upstream;
 
-pub use upstream::{UpstreamProxy, UpstreamProxyError};
+pub use upstream::UpstreamProxy;
 
 #[cfg(test)]
 pub(crate) use serve::connect_approved_addresses;

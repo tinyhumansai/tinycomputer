@@ -58,7 +58,7 @@ pub use action_gate::{
     ObservationKind,
 };
 pub use egress::{
-    BrowserDialTarget, DialGrant, EgressAuthorizer, EgressProxy, UpstreamProxy, UpstreamProxyError,
+    BrowserDialTarget, DialGrant, EgressAuthorizer, EgressProxy, UpstreamProxy,
 };
 pub use engine::{Engine, Launcher, Reply};
 pub use error::{Error, Result};
