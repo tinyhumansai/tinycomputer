@@ -53,6 +53,14 @@ impl fmt::Display for UpstreamProxyError {
 
 impl std::error::Error for UpstreamProxyError {}
 
+impl UpstreamProxyError {
+    /// What was wrong, as a static message that never quotes the URL.
+    #[must_use]
+    pub fn reason(&self) -> &'static str {
+        self.0
+    }
+}
+
 impl UpstreamProxy {
     /// Route `domains` (each matching itself and every subdomain) through the
     /// proxy at `url`, an `http://[user:password@]host[:port]` URL whose

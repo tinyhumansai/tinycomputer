@@ -195,9 +195,9 @@ fn upstream_proxies(value: &serde_json::Value) -> Result<Vec<UpstreamProxy>> {
                 .iter()
                 .map(|domain| domain.as_str().map(str::to_owned).ok_or_else(invalid))
                 .collect::<Result<Vec<_>>>()?;
-            UpstreamProxy::new(url, &domains).map_err(|error| {
-                log::warn!("browser egress upstream proxy refused: {error}");
-                invalid()
+            UpstreamProxy::new(url, &domains).map_err(|error| crate::Error::ConfigFieldType {
+                field: "browser.egress.upstream_proxies",
+                expected: error.reason(),
             })
         })
         .collect()
