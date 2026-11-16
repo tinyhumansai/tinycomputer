@@ -243,6 +243,16 @@ pub(super) async fn refuse(client: &mut TcpStream) -> io::Result<()> {
     .await
 }
 
+/// Answer a routed request whose upstream proxy would not open a tunnel.
+pub(super) async fn bad_gateway(client: &mut TcpStream) -> io::Result<()> {
+    write_all_bounded(
+        client,
+        b"HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
+        "browser gateway response timed out",
+    )
+    .await
+}
+
 pub(super) async fn write_all_bounded<W: tokio::io::AsyncWrite + Unpin>(
     stream: &mut W,
     bytes: &[u8],
