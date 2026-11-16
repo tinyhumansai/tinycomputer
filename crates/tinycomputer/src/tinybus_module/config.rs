@@ -183,7 +183,10 @@ fn upstream_proxies(value: &serde_json::Value) -> Result<Vec<UpstreamProxy>> {
     entries
         .iter()
         .map(|entry| {
-            let entry = entry.as_object().filter(|entry| entry.len() == 2).ok_or_else(invalid)?;
+            let entry = entry
+                .as_object()
+                .filter(|entry| entry.len() == 2)
+                .ok_or_else(invalid)?;
             let url = entry
                 .get("url")
                 .and_then(serde_json::Value::as_str)

@@ -50,6 +50,62 @@ fn browser_egress_is_private_strict_and_requires_the_host_connection() {
 }
 
 #[test]
+fn browser_egress_reads_upstream_proxies_without_echoing_their_credentials() {
+    use crate::tinybus_module::config::BrowserDefaults;
+    let scope = |upstream: serde_json::Value| {
+        BrowserDefaults::egress_from_raw(&json!({"browser":{"egress":{
+            "policy_id":"p","generation":7,"upstream_proxies":upstream
+        }}}))
+    };
+    let parsed = scope(json!([{
+        "url": "http://resi:hunter2@gate.proxy.test:7000",
+        "domains": ["reddit.com", "redd.it"]
+    }]))
+    .expect("valid upstream proxy")
+    .expect("scope is present");
+    assert_eq!(parsed.upstream_proxies.len(), 1);
+    assert!(parsed.upstream_proxies[0].routes("www.reddit.com"));
+    assert!(!parsed.upstream_proxies[0].routes("example.com"));
+    assert!(!format!("{parsed:?}").contains("hunter2"));
+    assert!(
+        scope(json!([]))
+            .unwrap()
+            .unwrap()
+            .upstream_proxies
+            .is_empty()
+    );
+    // Without the key nothing is routed.
+    let plain = BrowserDefaults::egress_from_raw(
+        &json!({"browser":{"egress":{"policy_id":"p","generation":7}}}),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(plain.upstream_proxies.is_empty());
+
+    for upstream in [
+        json!({"url": "http://resi:hunter2@gate.proxy.test:7000", "domains": ["reddit.com"]}),
+        json!([{"url": "https://resi:hunter2@gate.proxy.test:7000", "domains": ["reddit.com"]}]),
+        json!([{"url": "http://resi:hunter2@gate.proxy.test:7000", "domains": []}]),
+        json!([{"url": "http://resi:hunter2@gate.proxy.test:7000"}]),
+        json!([{"url": "http://resi:hunter2@gate.proxy.test:7000", "domains": ["reddit.com"], "extra": 1}]),
+        json!([{"url": 7, "domains": ["reddit.com"]}]),
+        json!([{"url": "http://resi:hunter2@gate.proxy.test:7000", "domains": [7]}]),
+        json!(
+            (0..17)
+                .map(|_| json!({"url": "http://h:1", "domains": ["a.test"]}))
+                .collect::<Vec<_>>()
+        ),
+    ] {
+        let error = scope(upstream.clone()).expect_err("invalid upstream proxies are refused");
+        assert!(
+            !error.to_string().contains("hunter2"),
+            "{upstream}: {error}"
+        );
+        assert!(error.to_string().contains("upstream_proxies"), "{error}");
+    }
+}
+
+#[test]
 fn the_desktop_is_available_only_with_accessibility() {
     use crate::tinybus_module::dispatch::desktop_availability;
 
