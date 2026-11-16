@@ -67,20 +67,14 @@ fn browser_egress_reads_upstream_proxies_without_echoing_their_credentials() {
     assert!(parsed.upstream_proxies[0].routes("www.reddit.com"));
     assert!(!parsed.upstream_proxies[0].routes("example.com"));
     assert!(!format!("{parsed:?}").contains("hunter2"));
-    assert!(
-        scope(json!([]))
-            .unwrap()
-            .unwrap()
-            .upstream_proxies
-            .is_empty()
-    );
+    assert_eq!(scope(json!([])).unwrap().unwrap().upstream_proxies.len(), 0);
     // Without the key nothing is routed.
     let plain = BrowserDefaults::egress_from_raw(
         &json!({"browser":{"egress":{"policy_id":"p","generation":7}}}),
     )
     .unwrap()
     .unwrap();
-    assert!(plain.upstream_proxies.is_empty());
+    assert_eq!(plain.upstream_proxies.len(), 0);
 
     for upstream in [
         json!({"url": "http://resi:hunter2@gate.proxy.test:7000", "domains": ["reddit.com"]}),
