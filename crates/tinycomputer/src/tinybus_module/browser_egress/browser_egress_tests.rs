@@ -184,3 +184,5 @@ async fn bus_adapter_refuses_host_denials_and_malformed_grants() -> tinybus::Res
     }
     Ok(())
 }
+
+mod upstream_tests;
